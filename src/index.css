@@ -1,0 +1,142 @@
+@import url('https://fonts.googleapis.com/css2?family=David+Libre:wght@400;500;700&family=Frank+Ruhl+Libre:wght@300;400;500;700;800&family=Heebo:wght@300;400;500;700;800&family=Noto+Serif+Hebrew:wght@300;400;500;600;700;800&family=Rubik:ital,wght@0,300..900;1,300..900&family=Varela+Round&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-heebo: "Heebo", "Inter", sans-serif;
+  --font-frank: "Frank Ruhl Libre", serif;
+  --font-rubik: "Rubik", "Heebo", sans-serif;
+  --font-varela: "Varela Round", sans-serif;
+  --font-mantova: "Guttman Mantova", "GuttmanMantova", "Frank Ruhl Libre", serif;
+  --font-hadassah: "Noto Serif Hebrew", "Hadassah Friedlaender", "Guttman Hadassah", serif;
+
+  --color-bg-app: var(--bg-app);
+  --color-bg-card: var(--bg-card);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-border-color: var(--border-color);
+  --color-bg-muted: var(--bg-muted);
+  --color-primary-accent: var(--primary-accent);
+  --color-primary-accent-hover: var(--primary-accent-hover);
+}
+
+.font-frank {
+  font-size-adjust: 0.53;
+}
+
+.font-hadassah {
+  font-size-adjust: 0.56;
+}
+
+:root {
+  --bg-app: #faf8f5;
+  --bg-card: #ffffff;
+  --text-primary: #1e1e1e;
+  --text-secondary: #555555;
+  --border-color: #e2ddd3;
+  --bg-muted: #f0ebe1;
+  --primary-accent: #152935;
+  --primary-accent-hover: #121e29;
+}
+
+[data-theme="yellow"], [data-theme="sepia"] {
+  --bg-app: #fbf6e3;
+  --bg-card: #fdfdf5;
+  --text-primary: #3d3215;
+  --text-secondary: #6e5c2d;
+  --border-color: #e4d3a8;
+  --bg-muted: #f3e7c4;
+  --primary-accent: #8b6200;
+  --primary-accent-hover: #6d4b00;
+}
+
+[data-theme="dark"] {
+  --bg-app: #121212;
+  --bg-card: #1e1e1e;
+  --text-primary: #faf8f5;
+  --text-secondary: #b8b8b8;
+  --border-color: #3d3d3d;
+  --bg-muted: #282828;
+  --primary-accent: #7ca5ce;
+  --primary-accent-hover: #9bbce0;
+}
+
+[data-theme="dark"] .text-primary-accent {
+  color: #7ca5ce;
+}
+
+[data-theme="dark"] .bg-primary-accent {
+  background-color: #252e39;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .bg-primary-accent\/10 {
+  background-color: rgba(124, 165, 206, 0.12);
+  border: 1px solid #3d3d3d;
+}
+
+[data-theme="dark-blue"] {
+  --bg-app: #0b1320;
+  --bg-card: #131e32;
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --border-color: #273954;
+  --bg-muted: #1a273e;
+  --primary-accent: #60a5fa;
+  --primary-accent-hover: #93c5fd;
+}
+
+[data-theme="dark-blue"] .text-primary-accent {
+  color: #60a5fa;
+}
+
+[data-theme="dark-blue"] .bg-primary-accent\/10 {
+  background-color: rgba(96, 165, 250, 0.12);
+  border: 1px solid #273954;
+}
+
+[data-theme="dark-blue"] .bg-primary-accent {
+  background-color: #182838;
+  color: #ffffff;
+}
+
+/* Base custom styles for smooth typography transitions and RTL defaults */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-feature-settings: "kern" 1, "liga" 1;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Custom scrollbar to keep layout premium */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* Utility to hide scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -1,0 +1,26 @@
+{
+  "short_name": "פרק שירה",
+  "name": "פרק שירה - שירת הבריאה",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "512x512 192x192 180x180",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512 192x192 any",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "display": "standalone",
+  "orientation": "portrait",
+  "dir": "rtl",
+  "lang": "he",
+  "description": "פרק שירה המלא מנוקד ומבואר עם אפשרות הקראה קולית ותזכורות יומיות."
+}

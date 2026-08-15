@@ -1,0 +1,6 @@
+{
+  "name": "Perek Shira",
+  "description": "A beautiful, minimalist, responsive RTL reading companion for Perek Shira (Chapter of Song) with Hebrew vocalization (niqqud), English descriptions, font toggling, search, and reading options.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
