@@ -1,18 +1,25 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { GoogleAuthProvider, onAuthStateChanged, User, signInWithPopup, signOut } from 'firebase/auth';
+import { auth } from './firebase';
 
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+export { auth };
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/tasks');
+provider.addScope('https://www.googleapis.com/auth/tasks.readonly');
+provider.addScope('profile');
+provider.addScope('email');
+provider.setCustomParameters({
+  prompt: 'consent select_account',
+  access_type: 'offline'
+});
+
+export const tasksProvider = provider;
 
 // Cache the access token in memory.
 let cachedAccessToken: string | null = null;
 
-const TOKEN_KEY = 'g_tasks_access_token';
-const TOKEN_EXP_KEY = 'g_tasks_access_token_exp';
+const TOKEN_KEY = 'g_tasks_access_token_v2';
+const TOKEN_EXP_KEY = 'g_tasks_access_token_v2_exp';
 
 export const getAccessToken = (): string | null => {
   if (cachedAccessToken) return cachedAccessToken;
@@ -38,6 +45,8 @@ export const setAccessToken = (token: string | null) => {
     } else {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(TOKEN_EXP_KEY);
+      localStorage.removeItem('g_tasks_access_token');
+      localStorage.removeItem('g_tasks_access_token_exp');
     }
   } catch (e) {
     // ignore
@@ -55,28 +64,40 @@ export const initAuth = (
 };
 
 // Must be called from a button click or user interaction
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+export const googleSignIn = async (requestTasksScope = true): Promise<{ user: User; accessToken: string | null } | null> => {
   try {
-    const result = await signInWithPopup(auth, provider);
+    const selectedProvider = requestTasksScope ? tasksProvider : provider;
+    const result = await signInWithPopup(auth, selectedProvider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Failed to get access token from Firebase Auth');
-    }
+    const token = credential?.accessToken || null;
 
-    setAccessToken(credential.accessToken);
-    return { user: result.user, accessToken: credential.accessToken };
-  } catch (error: any) {
-    if (error?.code === 'auth/popup-closed-by-user' || error?.message?.includes('popup-closed-by-user')) {
-      console.warn('Sign in was canceled by the user (popup closed).');
-    } else {
-      console.error('Sign in error:', error);
+    if (token) {
+      setAccessToken(token);
     }
+    return { user: result.user, accessToken: token };
+  } catch (error: any) {
+    if (
+      error?.code === 'auth/popup-closed-by-user' ||
+      error?.code === 'auth/user-cancelled' ||
+      error?.code === 'auth/cancelled-popup-request' ||
+      error?.message?.includes('popup-closed-by-user') ||
+      error?.message?.includes('user-cancelled') ||
+      error?.message?.includes('user refuses to grant permission')
+    ) {
+      console.info('Sign-in interaction was closed or canceled by the user.');
+      return null;
+    }
+    console.error('Sign in error:', error);
     throw error;
   }
 };
 
 export const logout = async () => {
-  await auth.signOut();
+  try {
+    await signOut(auth);
+  } catch (e) {
+    console.error('Sign out error:', e);
+  }
   setAccessToken(null);
 };
 
@@ -166,7 +187,7 @@ export const fetchExistingPerekShiraReminder = async (accessToken: string) => {
 
     const daysSet = new Set<number>();
     let isWeekly = false;
-    let extractedTime = '18:00';
+    let extractedTime = '';
 
     const DAY_MAP: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
 
@@ -199,10 +220,14 @@ export const fetchExistingPerekShiraReminder = async (accessToken: string) => {
     }
 
     const days = Array.from(daysSet).sort((a, b) => a - b);
+    if (!extractedTime || days.length === 0) {
+      return null;
+    }
+
     return {
       enabled: true,
       time: extractedTime,
-      days: days.length > 0 ? days : [0],
+      days: days,
       recurrence: (isWeekly ? 'weekly' : 'once') as 'weekly' | 'once',
     };
   } catch (err) {

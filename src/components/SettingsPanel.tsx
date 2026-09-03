@@ -1,14 +1,22 @@
 import React from 'react';
-import { Type, ALargeSmall, Eye, Image, ChevronDown, RotateCcw } from 'lucide-react';
+import { Type, ALargeSmall, Eye, Image, ChevronDown, RotateCcw, Download } from 'lucide-react';
 import { AppSettings, DEFAULT_SETTINGS } from '../types';
 
 interface SettingsPanelProps {
   settings: AppSettings;
   onChange: (settings: AppSettings) => void;
   onCloseSettings?: () => void;
+  canInstall?: boolean;
+  onInstall?: () => void;
+  onOpenDownloadImages?: () => void;
 }
 
-export default function SettingsPanel({ settings, onChange, onCloseSettings }: SettingsPanelProps) {
+export default function SettingsPanel({
+  settings,
+  onChange,
+  onCloseSettings,
+  onOpenDownloadImages,
+}: SettingsPanelProps) {
   const headerClass = 'flex items-center gap-1.5 font-bold text-text-primary text-sm sm:text-base';
 
   const triggerAutoClose = () => {
@@ -35,7 +43,6 @@ export default function SettingsPanel({ settings, onChange, onCloseSettings }: S
 
   return (
     <div id="settings-panel" className="w-full space-y-4" dir="rtl">
-      
       {/* Theme Selector */}
       <div id="theme-selector-container" className="flex flex-col gap-2 pb-3.5 border-b border-border-color/60">
         <span className={headerClass}>
@@ -169,6 +176,24 @@ export default function SettingsPanel({ settings, onChange, onCloseSettings }: S
           <span>איפוס להגדרות ברירת מחדל</span>
         </button>
       </div>
+
+      {/* Download All Images Section */}
+      {onOpenDownloadImages && (
+        <div className="pt-1">
+          <button
+            id="btn-download-all-images-settings"
+            onClick={() => {
+              onOpenDownloadImages();
+              if (onCloseSettings) onCloseSettings();
+            }}
+            className="w-full py-2.5 px-4 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 hover:text-amber-400 text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-3xs active:scale-98"
+            title="הורדת כל 92 התמונות של פרק שירה באיכות מקסימלית בקובץ ZIP"
+          >
+            <Download className="w-4 h-4 text-amber-500" />
+            <span>הורדת כל התמונות</span>
+          </button>
+        </div>
+      )}
 
     </div>
   );

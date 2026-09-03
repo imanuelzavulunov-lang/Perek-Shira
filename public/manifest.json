@@ -1,26 +1,61 @@
 {
-  "short_name": "פרק שירה",
   "name": "פרק שירה - שירת הבריאה",
+  "short_name": "פרק שירה",
+  "description": "פרק שירה המלא מנוקד ומבואר עם אפשרות הקראה קולית ותזכורות יומיות.",
+  "id": "/?source=pwa",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "dir": "rtl",
+  "lang": "he",
+  "prefer_related_applications": false,
+  "categories": ["books", "lifestyle", "education"],
   "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
     {
       "src": "/icon.png",
       "type": "image/png",
-      "sizes": "512x512 192x192 180x180",
-      "purpose": "any maskable"
+      "sizes": "787x787",
+      "purpose": "any"
     },
     {
-      "src": "/favicon.svg",
-      "type": "image/svg+xml",
-      "sizes": "512x512 192x192 any",
-      "purpose": "any maskable"
+      "src": "/favicon-96x96.png",
+      "type": "image/png",
+      "sizes": "96x96",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-48x48.png",
+      "type": "image/png",
+      "sizes": "48x48",
+      "purpose": "any"
     }
-  ],
-  "start_url": "/",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
-  "display": "standalone",
-  "orientation": "portrait",
-  "dir": "rtl",
-  "lang": "he",
-  "description": "פרק שירה המלא מנוקד ומבואר עם אפשרות הקראה קולית ותזכורות יומיות."
+  ]
 }

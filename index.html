@@ -9,10 +9,17 @@
     <meta name="author" content="פרק שירה" />
     <meta name="reader-mode" content="enabled" />
     
-    <!-- App Icons & PWA Manifest for Home Screen / Desktop Shortcuts -->
-    <link rel="icon" type="image/png" href="/icon.png" />
-    <link rel="apple-touch-icon" href="/icon.png" />
-    <link rel="shortcut icon" href="/icon.png" />
+    <!-- Favicons & App Icons for Browsers, Google Chrome Tab Switcher, Google Search & PWA -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#0f172a" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -20,11 +27,16 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="פרק שירה" />
     
+    <!-- Google Fonts for Instant Splash Screen & App Rendering -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@700;800&display=swap" />
+
     <!-- Open Graph / Facebook / Google Reader -->
     <meta property="og:type" content="article" />
     <meta property="og:title" content="פרק שירה - שירת הבריאה" />
     <meta property="og:description" content="פרק שירה המלא מנוקד ומבואר עם אפשרות הקראה קולית, תזכורות יומיות ותמונות." />
-    <meta property="og:image" content="/icon.png" />
+    <meta property="og:image" content="https://6a81e5d77cad5075a99e22f3.imgix.net/Perekshira/1000239477.png" />
     <meta property="og:locale" content="he_IL" />
     <meta property="og:site_name" content="פרק שירה" />
 
@@ -32,6 +44,7 @@
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="פרק שירה - שירת הבריאה" />
     <meta name="twitter:description" content="פרק שירה המלא מנוקד ומבואר." />
+    <meta name="twitter:image" content="https://6a81e5d77cad5075a99e22f3.imgix.net/Perekshira/1000239477.png" />
 
     <!-- JSON-LD Article Schema for Search & Reader Engine Indexing -->
     <script type="application/ld+json">
@@ -39,6 +52,7 @@
       "@context": "https://schema.org",
       "@type": "Article",
       "headline": "פרק שירה - שירת הבריאה",
+      "image": "https://6a81e5d77cad5075a99e22f3.imgix.net/Perekshira/1000239477.png",
       "description": "פרק שירה הוא חיבור קצר המסוגנן בלשון חז\"ל המכיל קטעי שירה אותם שרות כל הבריות בשבח הקב\"ה.",
       "inLanguage": "he",
       "author": {
@@ -49,19 +63,19 @@
     </script>
   </head>
   <body class="bg-[#0f172a]">
-    <!-- Single Loading Splash Screen - ONLY shown for installed PWA / Standalone App -->
-    <div id="initial-splash" style="display: none; position: fixed; inset: 0; z-index: 9999; background-color: #0f172a; flex-direction: column; align-items: center; justify-content: center; color: #ffffff; font-family: system-ui, -apple-system, sans-serif; direction: rtl;">
+    <!-- Single Loading Splash Screen -->
+    <div id="initial-splash" style="position: fixed; inset: 0; z-index: 9999; background-color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #ffffff; font-family: system-ui, -apple-system, sans-serif; direction: rtl;">
       <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
         <!-- Logo with WHITE BORDER ONLY for loading screen -->
         <div style="width: 150px; height: 150px; border-radius: 24px; border: 4px solid #ffffff; box-shadow: 0 0 25px rgba(255, 255, 255, 0.35); overflow: hidden; background-color: #0f172a; padding: 8px; display: flex; align-items: center; justify-content: center;">
-          <img src="/icon.png" alt="פרק שירה" style="width: 100%; height: 100%; object-fit: cover; border-radius: 16px;" />
+          <img src="https://6a81e5d77cad5075a99e22f3.imgix.net/Perekshira/1000239477.png" alt="פרק שירה" onerror="this.onerror=null; this.src='/icon.png';" style="width: 100%; height: 100%; object-fit: cover; border-radius: 16px;" />
         </div>
         <div style="text-align: center;">
-          <div style="font-size: 28px; font-weight: 800; color: #fde68a; margin-bottom: 6px;">פרק שירה</div>
+          <div style="font-family: 'Frank Ruhl Libre', serif; font-size: 32px; font-weight: 800; color: #fde68a; margin-bottom: 6px; letter-spacing: 0.025em;">פרק שירה</div>
           <div style="font-size: 15px; color: #cbd5e1; font-weight: 500;">טוען את האפליקציה...</div>
         </div>
         <!-- Spinner -->
-        <div style="width: 28px; height: 28px; border: 3px solid rgba(253, 230, 138, 0.2); border-top-color: #fde68a; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+        <div style="width: 30px; height: 30px; border: 3px solid rgba(253, 230, 138, 0.2); border-top-color: #fde68a; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
       </div>
     </div>
     <style>
@@ -71,35 +85,38 @@
       }
     </style>
 
-    <script>
-      (function() {
-        // Detect if opened as an installed app (PWA / Standalone)
-        var isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-                           window.navigator.standalone === true ||
-                           document.referrer.includes('android-app://');
-        var splash = document.getElementById('initial-splash');
-        if (splash && isStandalone) {
-          splash.style.display = 'flex';
-        }
-      })();
-    </script>
-
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Smoothly hide splash screen once loaded if visible
-      window.addEventListener('DOMContentLoaded', () => {
-        const splash = document.getElementById('initial-splash');
-        if (splash && splash.style.display !== 'none') {
-          setTimeout(() => {
-            splash.style.transition = 'opacity 0.35s ease';
+      (function() {
+        const startTime = Date.now();
+        const MIN_DISPLAY_TIME = 1500; // Display for at least 1.5 seconds for a pleasant loading feel
+
+        function fadeOutSplash() {
+          const splash = document.getElementById('initial-splash');
+          if (!splash) return;
+
+          const elapsed = Date.now() - startTime;
+          const remaining = Math.max(0, MIN_DISPLAY_TIME - elapsed);
+
+          setTimeout(function() {
+            splash.style.transition = 'opacity 0.45s ease, visibility 0.45s ease';
             splash.style.opacity = '0';
-            setTimeout(() => splash.remove(), 350);
-          }, 500);
-        } else if (splash) {
-          splash.remove();
+            splash.style.pointerEvents = 'none';
+            setTimeout(function() {
+              if (splash.parentNode) {
+                splash.remove();
+              }
+            }, 450);
+          }, remaining);
         }
-      });
+
+        if (document.readyState === 'complete') {
+          fadeOutSplash();
+        } else {
+          window.addEventListener('load', fadeOutSplash);
+        }
+      })();
     </script>
   </body>
 </html>

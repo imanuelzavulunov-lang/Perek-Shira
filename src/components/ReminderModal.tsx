@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { X, Clock, Bell, Check, Sparkles, Loader2, ChevronDown, Repeat, Calendar, Pencil, Trash2, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DailyReminder } from '../types';
-import { initAuth, googleSignIn, getAccessToken, createGoogleTask, clearExistingPerekShiraTasks, fetchExistingPerekShiraReminder, logout } from '../lib/gauth';
+import { initAuth, googleSignIn, getAccessToken, setAccessToken, createGoogleTask, clearExistingPerekShiraTasks, fetchExistingPerekShiraReminder, logout } from '../lib/gauth';
+import { syncUserReminderToFirestore } from '../lib/userDataService';
 
 interface ReminderModalProps {
   isOpen: boolean;
@@ -23,9 +24,9 @@ const DAYS_OF_WEEK = [
 ];
 
 export default function ReminderModal({ isOpen, onClose, reminder, onSave }: ReminderModalProps) {
-  const [time, setTime] = useState(reminder.time || '18:00');
+  const [time, setTime] = useState(reminder.time || '');
   const [recurrence, setRecurrence] = useState<'once' | 'weekly'>(
-    reminder.recurrence || (reminder.days && reminder.days.length > 0 ? 'weekly' : 'once')
+    reminder.enabled ? (reminder.recurrence || 'once') : 'once'
   );
   const [days, setDays] = useState<number[]>(reminder.days || []);
   const [saved, setSaved] = useState(false);
@@ -37,28 +38,31 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
   const [isEditing, setIsEditing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const isUserConnected = !!(currentUser && accessToken);
-  const canSave = isUserConnected && days.length > 0 && !!time;
+  const isUserConnected = !!currentUser;
+  const canSave = isUserConnected && !!time && days.length > 0;
   const wasOpenRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
       if (!wasOpenRef.current) {
-        setTime(reminder.time || '18:00');
-        setDays(reminder.days || []);
-        setRecurrence(reminder.recurrence || (reminder.days && reminder.days.length > 0 ? 'weekly' : 'once'));
+        if (reminder.enabled) {
+          setTime(reminder.time || '');
+          setDays(reminder.days || []);
+          setRecurrence(reminder.recurrence || 'once');
+          setIsEditing(false);
+        } else {
+          setTime(reminder.time || '');
+          setDays(reminder.days || []);
+          setRecurrence(reminder.recurrence || 'once');
+          setIsEditing(true);
+        }
         setSaved(false);
         setError(null);
         setSuccessMsg(null);
       }
-      if (reminder.enabled && isUserConnected) {
-        setIsEditing(false);
-      } else if (!reminder.enabled && !isUserConnected) {
-        setIsEditing(true);
-      }
     }
     wasOpenRef.current = isOpen;
-  }, [reminder, isOpen, isUserConnected]);
+  }, [isOpen, reminder.enabled]);
 
   useEffect(() => {
     const unsubscribe = initAuth((user, token) => {
@@ -69,27 +73,19 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
   }, []);
 
   useEffect(() => {
-    if (accessToken) {
+    if (accessToken && reminder.enabled && reminder.time) {
       setIsSyncing(true);
       fetchExistingPerekShiraReminder(accessToken)
         .then((remoteReminder) => {
-          if (remoteReminder) {
+          if (remoteReminder && remoteReminder.enabled && remoteReminder.time) {
             onSave(remoteReminder, { silent: true });
             setTime(remoteReminder.time);
-            setDays(remoteReminder.days);
-            setRecurrence(remoteReminder.recurrence);
-            setIsEditing(false);
-          } else if (reminder.enabled) {
-            setIsEditing(false);
-          } else {
-            setIsEditing(true);
+            setDays(remoteReminder.days || []);
+            setRecurrence(remoteReminder.recurrence || 'once');
           }
         })
         .catch((err) => {
           console.warn('Sync reminder error:', err);
-          if (reminder.enabled) {
-            setIsEditing(false);
-          }
         })
         .finally(() => {
           setIsSyncing(false);
@@ -97,7 +93,7 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
     } else {
       setIsSyncing(false);
     }
-  }, [accessToken]);
+  }, [accessToken, reminder.enabled]);
 
   useEffect(() => {
     if (error) {
@@ -120,11 +116,12 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
     setIsLoading(true);
     setError(null);
     try {
-      const res = await googleSignIn();
+      setAccessToken(null); // Clear any old token
+      const res = await googleSignIn(true);
       if (res) {
         setCurrentUser(res.user);
         setAccessTokenState(res.accessToken);
-        setSuccessMsg('התחברת בהצלחה לחשבון Google!');
+        setSuccessMsg('התחברת בהצלחה לחשבון Google עם הרשאות תזכורת!');
         setTimeout(() => setSuccessMsg(null), 3000);
       }
     } catch (err: any) {
@@ -144,24 +141,48 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
     setIsLoading(true);
     setError(null);
     try {
-      const token = accessToken || getAccessToken();
+      let token = accessToken || getAccessToken();
       if (token) {
-        await clearExistingPerekShiraTasks(token);
+        try {
+          await clearExistingPerekShiraTasks(token);
+        } catch (taskErr: any) {
+          console.warn('Could not clear tasks directly with token, continuing local cancellation:', taskErr);
+        }
+      }
+      if (currentUser?.uid) {
+        await syncUserReminderToFirestore(currentUser.uid, {
+          enabled: false,
+          time: '',
+          days: [],
+          recurrence: 'once',
+        });
       }
       setDays([]);
-      setTime('18:00');
+      setTime('');
       setRecurrence('once');
       setIsEditing(true);
       localStorage.removeItem('perek-shira-reminder');
-      onSave({ enabled: false, time: '18:00', days: [], recurrence: 'once' }, { silent: true });
+      onSave({ enabled: false, time: '', days: [], recurrence: 'once' });
       setSuccessMsg('התזכורת בוטלה בהצלחה.');
-      setTimeout(() => setSuccessMsg(null), 3000);
+      setTimeout(() => {
+        setSuccessMsg(null);
+        onClose();
+      }, 1200);
     } catch (err: any) {
       console.error('Cancel reminder error:', err);
       setError('שגיאה בביטול התזכורת.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleStartEditing = () => {
+    setTime(reminder.time || time || '');
+    setDays(reminder.days || days || []);
+    setRecurrence(reminder.recurrence || recurrence || 'once');
+    setIsEditing(true);
+    setError(null);
+    setSuccessMsg(null);
   };
 
   const handleLogout = async () => {
@@ -171,8 +192,13 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
       await logout();
       setCurrentUser(null);
       setAccessTokenState(null);
+      setTime('');
+      setDays([]);
+      setRecurrence('once');
       setIsEditing(true);
-      setSuccessMsg('התנתקת מחשבון Google בהצלחה. הגדרות התזכורת שמורות וישוחזרו בעת התחברות מחדש.');
+      localStorage.removeItem('perek-shira-reminder');
+      onSave({ enabled: false, time: '', days: [], recurrence: 'once' });
+      setSuccessMsg('התנתקת מחשבון Google בהצלחה. הגדרות התזכורת אופסו.');
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
       console.error('Logout error:', err);
@@ -191,7 +217,7 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
     try {
       let token = accessToken || getAccessToken();
       if (!token) {
-        const res = await googleSignIn();
+        const res = await googleSignIn(true);
         if (res) {
           token = res.accessToken;
           setCurrentUser(res.user);
@@ -199,40 +225,68 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
         }
       }
 
-      if (token) {
-        const taskNotes = recurrence === 'weekly' ? `תזכורת שבועית (שעה: ${time})` : `תזכורת חד פעמית (שעה: ${time})`;
-        await createGoogleTask(token, 'קריאת פרק שירה 📖✨', taskNotes, time, days, recurrence);
-        setSuccessMsg('התזכורת עודכנה ב-Google Tasks בהצלחה!');
-      } else {
+      if (!token) {
         throw new Error('לא התקבל מפתח גישה מ-Google');
       }
+
+      const taskNotes = recurrence === 'weekly' ? `תזכורת שבועית (שעה: ${time})` : `תזכורת חד פעמית (שעה: ${time})`;
+      
+      try {
+        await createGoogleTask(token, 'קריאת פרק שירה 📖✨', taskNotes, time, days, recurrence);
+      } catch (saveTaskErr: any) {
+        const errString = String(saveTaskErr?.message || saveTaskErr || '');
+        // If scope was insufficient or token expired, force re-authorization with Tasks scope
+        if (
+          errString.includes('403') ||
+          errString.includes('insufficient') ||
+          errString.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT') ||
+          errString.includes('PERMISSION_DENIED')
+        ) {
+          console.warn('Scope was insufficient, clearing cached token...');
+          setAccessToken(null);
+          setAccessTokenState(null);
+          throw new Error('נדרש אישור הרשאה עבור Google Tasks. אנא לחצו שוב על כפתור השמירה או התחברו מחדש כדי לאשר הרשאות.');
+        } else {
+          throw saveTaskErr;
+        }
+      }
+
+      const updatedReminderData: DailyReminder = {
+        enabled: true,
+        time,
+        days,
+        recurrence,
+      };
+
+      if (currentUser?.uid) {
+        await syncUserReminderToFirestore(currentUser.uid, updatedReminderData);
+      }
+      
+      localStorage.setItem('perek-shira-reminder', JSON.stringify(updatedReminderData));
+      onSave(updatedReminderData);
+
+      setSaved(true);
+      setSuccessMsg('התזכורת הוגדרה בהצלחה! ✨');
+      setTimeout(() => {
+        setSaved(false);
+        setIsEditing(false);
+        setSuccessMsg(null);
+        setError(null);
+        onClose();
+      }, 1400);
     } catch (err: any) {
       if (err?.code === 'auth/popup-closed-by-user' || err?.message?.includes('popup-closed-by-user')) {
         console.warn('Google Task save canceled by user due to incomplete sign in (popup closed).');
         setError('ההתחברות בוטלה. יש להשלים את ההתחברות בחלון שנפתח על מנת לקבל תזכורות.');
+      } else if (err?.message && err.message.startsWith('נדרש אישור הרשאה')) {
+        setError(err.message);
       } else {
         console.error('Error saving Google Task:', err);
-        setError('שגיאה בחיבור או ביצירת המשימה ב-Google Tasks. אנא נסו שוב.');
+        setError('שגיאה בחיבור או ביצירת המשימה ב-Google Tasks. אנא ודאו שאישרתם הרשאות עבור Google Tasks ונסו שוב.');
       }
+    } finally {
       setIsLoading(false);
-      return;
     }
-    setIsLoading(false);
-
-    onSave({
-      enabled: true,
-      time,
-      days,
-      recurrence,
-    });
-    setSaved(true);
-    setIsEditing(false);
-    setTimeout(() => {
-      setSaved(false);
-      setSuccessMsg(null);
-      setError(null);
-      onClose();
-    }, 1800);
   };
 
   return (
@@ -323,26 +377,9 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 font-sans">
-                  <div className="bg-bg-muted py-2 px-3 rounded-xl border border-border-color flex flex-col justify-center">
-                    <span className="text-[11px] text-text-secondary block mb-0.5">שעת תזכורת:</span>
-                    <div className="flex items-center gap-1.5 font-bold text-text-primary text-sm sm:text-base whitespace-nowrap">
-                      <Clock className="w-3.5 h-3.5 text-primary-accent shrink-0" />
-                      <span>{time}</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-bg-muted py-2 px-3 rounded-xl border border-border-color flex flex-col justify-center">
-                    <span className="text-[11px] text-text-secondary block mb-0.5">תדירות:</span>
-                    <div className="flex items-center gap-1.5 font-bold text-text-primary text-xs sm:text-sm whitespace-nowrap">
-                      <Repeat className="w-3.5 h-3.5 text-primary-accent shrink-0" />
-                      <span className="truncate">{recurrence === 'weekly' ? 'שבועית' : 'חד פעמית'}</span>
-                    </div>
-                  </div>
-                </div>
-
+                {/* 1. Days configured */}
                 <div className="bg-bg-muted py-2 px-3 rounded-xl border border-border-color font-sans space-y-1">
-                  <span className="text-[11px] text-text-secondary block">ימים מוגדרים:</span>
+                  <span className="text-[11px] text-text-secondary block">ימי תזכורת:</span>
                   <div className="flex flex-wrap gap-1">
                     {days.length > 0 ? (
                       DAYS_OF_WEEK.filter(d => days.includes(d.id)).map(day => (
@@ -353,6 +390,25 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
                     ) : (
                       <span className="text-xs text-text-secondary italic">לא נבחרו ימים</span>
                     )}
+                  </div>
+                </div>
+
+                {/* 2. Time & 3. Recurrence type */}
+                <div className="grid grid-cols-2 gap-2 font-sans">
+                  <div className="bg-bg-muted py-2 px-3 rounded-xl border border-border-color flex flex-col justify-center">
+                    <span className="text-[11px] text-text-secondary block mb-0.5">שעת תזכורת:</span>
+                    <div className="flex items-center gap-1.5 font-bold text-text-primary text-sm sm:text-base whitespace-nowrap">
+                      <Clock className="w-3.5 h-3.5 text-primary-accent shrink-0" />
+                      <span>{time}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-bg-muted py-2 px-3 rounded-xl border border-border-color flex flex-col justify-center">
+                    <span className="text-[11px] text-text-secondary block mb-0.5">סוג התזכורת (תדירות):</span>
+                    <div className="flex items-center gap-1.5 font-bold text-text-primary text-xs sm:text-sm whitespace-nowrap">
+                      <Repeat className="w-3.5 h-3.5 text-primary-accent shrink-0" />
+                      <span className="truncate">{recurrence === 'weekly' ? 'שבועית' : 'חד פעמית'}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -370,7 +426,7 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
                 
                 <button
                   type="button"
-                  onClick={() => setIsEditing(true)}
+                  onClick={handleStartEditing}
                   className="py-2 px-4 rounded-xl bg-primary-accent text-white hover:bg-primary-accent-hover font-bold text-xs sm:text-sm transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -449,6 +505,35 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
                   )}
                 </div>
 
+                {/* Days of the Week Selector */}
+                <div className={`space-y-1.5 transition-opacity ${isUserConnected ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                  <label className="block text-[15px] font-bold text-text-primary flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-primary-accent" />
+                    בחרו ימי תזכורת:
+                  </label>
+                  <div className="flex justify-between gap-1">
+                    {DAYS_OF_WEEK.map((day) => {
+                      const isSelected = days.includes(day.id);
+                      return (
+                        <button
+                          key={day.id}
+                          type="button"
+                          disabled={!isUserConnected || isLoading}
+                          onClick={() => toggleDay(day.id)}
+                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full font-bold text-xs sm:text-sm flex items-center justify-center transition-all cursor-pointer border ${
+                            isSelected
+                              ? 'bg-primary-accent text-white border-primary-accent shadow-xs scale-105'
+                              : 'bg-bg-card text-text-secondary border-border-color hover:bg-bg-muted hover:text-text-primary'
+                          }`}
+                          title={day.name}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Time Picker */}
                 <div className={`space-y-1.5 transition-opacity ${isUserConnected ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                   <style>{`
@@ -463,22 +548,44 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
                       opacity: 0;
                       cursor: pointer;
                     }
+                    .custom-time-input.is-empty::-webkit-datetime-edit,
+                    .custom-time-input.is-empty::-webkit-datetime-edit-fields-wrapper,
+                    .custom-time-input.is-empty::-webkit-datetime-edit-text,
+                    .custom-time-input.is-empty::-webkit-datetime-edit-hour-field,
+                    .custom-time-input.is-empty::-webkit-datetime-edit-minute-field,
+                    .custom-time-input.is-empty::-webkit-datetime-edit-ampm-field {
+                      color: transparent !important;
+                      opacity: 0 !important;
+                    }
                   `}</style>
                   <label className="block text-[15px] font-bold text-text-primary flex items-center gap-1.5">
                     <Clock className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-primary-accent" />
                     בחרו שעת תזכורת:
                   </label>
-                  <div className="relative w-full">
+                  <div 
+                    className="relative w-full cursor-pointer"
+                    onClick={(e) => {
+                      if (!isUserConnected || isLoading) return;
+                      const input = (e.currentTarget.querySelector('input[type="time"]') as HTMLInputElement);
+                      if (input) {
+                        try {
+                          input.showPicker();
+                        } catch {
+                          input.focus();
+                        }
+                      }
+                    }}
+                  >
                     <input
                       type="time"
                       value={time}
                       onChange={(e) => setTime(e.target.value)}
                       disabled={!isUserConnected || isLoading}
-                      className="custom-time-input w-full bg-bg-card border border-border-color rounded-xl pr-3.5 pl-10 py-2 text-right text-lg font-bold text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-accent focus:border-transparent cursor-pointer shadow-xs appearance-none"
+                      className={`custom-time-input ${!time ? 'is-empty text-transparent' : 'text-text-primary'} w-full bg-bg-card border border-border-color rounded-xl pr-3.5 pl-10 py-2.5 text-right text-base sm:text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary-accent focus:border-transparent cursor-pointer shadow-xs appearance-none`}
                       dir="rtl"
                     />
                     {!time && (
-                      <div className="absolute inset-y-0 right-4 left-10 flex items-center justify-start pointer-events-none text-text-secondary font-bold text-xs font-sans">
+                      <div className="absolute inset-y-0 right-4 left-10 flex items-center justify-start pointer-events-none text-text-secondary font-bold text-xs sm:text-sm font-sans select-none">
                         לחץ על מנת לבחור שעה
                       </div>
                     )}
@@ -492,7 +599,7 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
                 <div className={`space-y-1.5 transition-opacity ${isUserConnected ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                   <label className="block text-[15px] font-bold text-text-primary flex items-center gap-1.5">
                     <Repeat className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-primary-accent" />
-                    תדירות תזכורת:
+                    סוג התזכורת (תדירות):
                   </label>
                   <div className="grid grid-cols-2 gap-1.5 bg-bg-muted p-1 rounded-xl border border-border-color font-sans">
                     <button
@@ -521,35 +628,6 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
                       <Repeat className="w-3.5 h-3.5" />
                       <span>שבועית</span>
                     </button>
-                  </div>
-                </div>
-
-                {/* Days of the Week Selector */}
-                <div className={`space-y-1.5 transition-opacity ${isUserConnected ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                  <label className="block text-[15px] font-bold text-text-primary flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary-accent inline-block"></span>
-                    בחרו ימי תזכורת:
-                  </label>
-                  <div className="flex justify-between gap-1">
-                    {DAYS_OF_WEEK.map((day) => {
-                      const isSelected = days.includes(day.id);
-                      return (
-                        <button
-                          key={day.id}
-                          type="button"
-                          disabled={!isUserConnected || isLoading}
-                          onClick={() => toggleDay(day.id)}
-                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full font-bold text-xs sm:text-sm flex items-center justify-center transition-all cursor-pointer border ${
-                            isSelected
-                              ? 'bg-primary-accent text-white border-primary-accent shadow-xs scale-105'
-                              : 'bg-bg-card text-text-secondary border-border-color hover:bg-bg-muted hover:text-text-primary'
-                          }`}
-                          title={day.name}
-                        >
-                          {day.label}
-                        </button>
-                      );
-                    })}
                   </div>
                 </div>
               </div>

@@ -9,10 +9,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { PEREK_SHIRA_DATA } from './data';
 import { Verse, AppSettings, DailyReminder, DEFAULT_SETTINGS } from './types';
 import { speakVerse } from './lib/speech';
+import { initAuth } from './lib/gauth';
+import { syncUserSettingsToFirestore, listenToUserData } from './lib/userDataService';
 import SettingsPanel from './components/SettingsPanel';
 import SearchAndFilter from './components/SearchAndFilter';
 import VerseCard from './components/VerseCard';
 import ReminderModal from './components/ReminderModal';
+import DownloadImagesModal from './components/DownloadImagesModal';
 import IntroSection from './components/IntroSection';
 import YehiRatzonCard from './components/YehiRatzonCard';
 import BottomIntroSection from './components/BottomIntroSection';
@@ -23,8 +26,57 @@ export default function App() {
   const [selectedChapterId, setSelectedChapterId] = useState<number | 'yehi-ratzon' | null>(null);
   const [activePlayingVerseId, setActivePlayingVerseId] = useState<string | null>(null);
   const [isReminderOpen, setIsReminderOpen] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any | null>(null);
+
+  // --- PWA Installation Support for Android & Desktop ---
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent the default mini-infobar or browser-only prompt
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setDeferredInstallPrompt(null);
+      showNotification('האפליקציה הותקנה בהצלחה במכשירך!');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const isStandalone = typeof window !== 'undefined' && (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true ||
+    document.referrer.includes('android-app://')
+  );
+
+  const handleInstallApp = async () => {
+    if (deferredInstallPrompt) {
+      try {
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        if (outcome === 'accepted') {
+          showNotification('מתקין את האפליקציה במכשירך...');
+        }
+        setDeferredInstallPrompt(null);
+        return;
+      } catch (err) {
+        console.error('Install prompt error:', err);
+      }
+    }
+    
+    // Helpful guide if beforeinstallprompt is not directly triggered
+    showNotification('להתקנה: לחץ על 3 הנקודות בדפדפן ובחר "התקן אפליקציה"');
+  };
 
   // --- Sequential Audio Playback States & Refs ---
   const [toastState, setToastState] = useState<{ verseId: string; chapterId: number } | null>(null);
@@ -234,22 +286,52 @@ export default function App() {
     const saved = localStorage.getItem('perek-shira-reminder');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (!parsed.enabled) {
+          parsed.recurrence = 'once';
+        }
+        return parsed;
       } catch (e) {}
     }
-    return { enabled: false, time: '18:00' };
+    return { enabled: false, time: '', days: [], recurrence: 'once' };
   });
 
-  // --- Sync to LocalStorage & HTML Class ---
+  // --- User Auth & Firestore Cloud Sync ---
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+
+  useEffect(() => {
+    const unsubAuth = initAuth((user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const unsubData = listenToUserData(currentUser.uid, (data) => {
+      if (data?.settings) {
+        setSettings((prev) => ({ ...prev, ...data.settings }));
+      }
+      if (data?.reminder) {
+        setReminder((prev) => ({ ...prev, ...data.reminder }));
+      }
+    });
+    return () => unsubData();
+  }, [currentUser]);
+
+  // --- Sync to LocalStorage & HTML Class & Firestore ---
   useEffect(() => {
     localStorage.setItem('perek-shira-settings', JSON.stringify(settings));
+    if (currentUser?.uid) {
+      syncUserSettingsToFirestore(currentUser.uid, settings);
+    }
     
     // Apply theme attribute and class to <html> root element
     const root = document.documentElement;
     root.setAttribute('data-theme', settings.theme);
     root.classList.remove('theme-light', 'theme-dark', 'theme-warm', 'theme-parchment', 'theme-sky', 'theme-yellow', 'theme-dark-blue');
     root.classList.add(`theme-${settings.theme}`);
-  }, [settings]);
+  }, [settings, currentUser]);
 
   useEffect(() => {
     localStorage.setItem('perek-shira-reminder', JSON.stringify(reminder));
@@ -450,7 +532,7 @@ export default function App() {
             </div>
           </button>
 
-          {/* Secondary small logo (clean serif text matching the uploaded image logo style) */}
+          {/* Secondary small logo (clean serif text) */}
           <span className="font-frank font-extrabold text-[21.6px] md:text-[27px] text-white select-none leading-none tracking-wide">
             פרק שירה
           </span>
@@ -508,7 +590,14 @@ export default function App() {
               </div>
 
               <div className="flex-1 space-y-4">
-                <SettingsPanel settings={settings} onChange={handleSettingsChange} onCloseSettings={() => setIsMenuOpen(false)} />
+                <SettingsPanel
+                  settings={settings}
+                  onChange={handleSettingsChange}
+                  onCloseSettings={() => setIsMenuOpen(false)}
+                  canInstall={!isStandalone}
+                  onInstall={handleInstallApp}
+                  onOpenDownloadImages={() => setIsDownloadModalOpen(true)}
+                />
               </div>
             </motion.div>
           </>
@@ -530,8 +619,7 @@ export default function App() {
             </div>
 
             <p id="app-subtitle" dir="rtl" className="text-[15.2px] md:text-[17.1px] text-text-secondary max-w-xl mx-auto leading-relaxed font-medium">
-           פרק שירה הוא חיבור קצר (ברייתא) המסוגנן בלשון חז"ל. הפרק מכיל קטעי שירה אותם שרות כל הבריות בשבח הקב"ה. כל הקטעים הם פסוקים הלקוחים מהתנ"ך, רובם מספר תהלים. יש במסורת היהודית שייחסו חיבור זה לדוד המלך, ויש המוסיפים גם את שלמה המלך שחיברו עם אביו במשותף.
-            </p>
+פרק שירה היא ברייתא קדמונית המכילה קטעי שירה אותם שרות כל הבריות בשבח הקב"ה. מסורת ישראל מייחסת את החיבור לדוד המלך ולשלמה בנו. מקובל כי אמירת פרק שירה בכל יום היא סגולה עצומה לשמירה, להצלה מכל צרה וצוקה, ולזכייה בחיי העולם הבא.            </p>
 
 
           </div>
@@ -682,9 +770,20 @@ export default function App() {
         onSave={(newReminder, options) => {
           setReminder(newReminder);
           if (!options?.silent) {
-            showNotification('התזכורת נשמרה בהצלחה!');
+            if (newReminder.enabled) {
+              showNotification('התזכורת הוגדרה בהצלחה! ✨');
+            } else {
+              showNotification('התזכורת בוטלה בהצלחה');
+            }
           }
         }}
+      />
+
+      {/* Download All Images Modal */}
+      <DownloadImagesModal
+        isOpen={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        onSuccessToast={showNotification}
       />
 
       {/* Sequential Play Floating Panel Toast */}

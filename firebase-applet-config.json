@@ -1,11 +1,12 @@
 {
-  "projectId": "upbeat-timing-j7c1c",
-  "appId": "1:134335935303:web:d427b57c596976d2569262",
-  "apiKey": "AIzaSyBNQhAByX1we-N-6sqdNvsn9GhaFZidHlU",
-  "authDomain": "upbeat-timing-j7c1c.firebaseapp.com",
-  "storageBucket": "upbeat-timing-j7c1c.firebasestorage.app",
-  "messagingSenderId": "134335935303",
+  "projectId": "gen-lang-client-0871908861",
+  "appId": "1:567158709866:web:9ff1920259d233377eb413",
+  "apiKey": "AIzaSyDBGTBdi514dq_gqHLl6cnxJ4zg7Wj1jso",
+  "authDomain": "gen-lang-client-0871908861.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-perekshira-0b1a363d-b9ce-48b3-8eef-ab14703e4e9b",
+  "storageBucket": "gen-lang-client-0871908861.firebasestorage.app",
+  "messagingSenderId": "567158709866",
   "measurementId": "",
-  "oAuthClientId": "134335935303-8iabke6mff9fr6uj6cctjfful0rmm6pb.apps.googleusercontent.com",
+  "oAuthClientId": "567158709866-9tnvp922dpnsju9oduiefgcbpgcl308j.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
