@@ -612,10 +612,24 @@ export default function App() {
           <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center">
             
             {/* Main Logo (clean serif text matching the uploaded image logo style) */}
-            <div className="pb-4">
+            <div className="pb-2">
               <h1 id="app-title-h1" className="text-[43px] md:text-[65px] font-frank font-extrabold text-text-primary select-none tracking-normal leading-none">
                 פרק שירה
               </h1>
+            </div>
+
+            {/* Ornamental Divider matching the uploaded image */}
+            <div className="flex items-center justify-center gap-3 mt-[3px] mb-3 select-none" aria-hidden="true">
+              <div className="w-16 md:w-24 h-[1.5px] bg-border-color opacity-80 rounded-full" />
+              <svg 
+                className="w-3.5 h-3.5 text-border-color opacity-85" 
+                viewBox="0 0 24 24" 
+                fill="currentColor"
+              >
+                {/* 4-point star/diamond motif */}
+                <path d="M12 0 C12 6.627 17.373 12 24 12 C17.373 12 12 17.373 12 24 C12 17.373 6.627 12 0 12 C6.627 12 12 6.627 12 0 Z" />
+              </svg>
+              <div className="w-16 md:w-24 h-[1.5px] bg-border-color opacity-80 rounded-full" />
             </div>
 
             <p id="app-subtitle" dir="rtl" className="text-[15.2px] md:text-[17.1px] text-text-secondary max-w-xl mx-auto leading-relaxed font-medium">

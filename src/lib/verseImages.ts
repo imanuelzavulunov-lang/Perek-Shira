@@ -9,20 +9,20 @@ export const VERSE_IMAGES: Record<string, string> = {
   '1_5': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%9E%D7%93%D7%91%D7%A8/BCO.b7612200-67b0-45f2-b931-c3aef77052eb.avif?auto=format&fit=crop&w=600&q=80', // Desert/Midbar
   '1_6': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%A9%D7%93%D7%95%D7%AA/photo-1495107334309-fcf20504a5ab.avif?auto=format&fit=crop&w=600&q=80', // Fields/Sadoht
   '1_7': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%9E%D7%99%D7%9D/BCO.115fe902-4713-4b99-97f9-a2ad39e75056.avif?auto=format&fit=crop&w=600&q=80', // Waters/Mayim
-  '1_8': 'https://6a56a054cec0a76b214808b3.imgix.net/%D7%99%D7%9E%D7%99%D7%9D/BCO.1fdbe155-9b25-4432-88d7-c7198d34833d.png?auto=format&fit=crop&w=600&q=80', // Seas/Yamim
+  '1_8': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%99%D7%9E%D7%99%D7%9D/BCO.1fdbe155-9b25-4432-88d7-c7198d34833d.avif?auto=format&fit=crop&w=600&q=80', // Seas/Yamim
   '1_9': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%A0%D7%94%D7%A8%D7%95%D7%AA/BCO.fed1810d-6803-44fd-8ab5-f83acef6099e.avif?auto=format&fit=crop&w=600&q=80', // Rivers/Neharot
   '1_10': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%9E%D7%A2%D7%99%D7%A0%D7%95%D7%AA/flooded-industrial-granite-career-with-waterfalls_419896-864.avif?auto=format&fit=crop&w=600&q=80', // Springs/Maayanot
 
   // Chapter 2
-  '2_1': 'https://6a56a054cec0a76b214808b3.imgix.net/huo1/ChatGPT%20Image%20Aug%2012,%202026,%2010_20_05%20PM.png?auto=format&fit=crop&w=600&q=80', // Day/Yom
+  '2_1': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%99%D7%95%D7%9D/ChatGPT%20Image%20Aug%2012,%202026,%2010_20_05%20PM.avif?auto=format&fit=crop&w=600&q=80', // Day/Yom
   '2_2': 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80', // Night/Laylah
   '2_3': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%A9%D7%9E%D7%A9/1000225247.avif?auto=format&fit=crop&w=600&q=80', // Sun/Shemesh
   '2_4': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%99%D7%A8%D7%97/1000225248.avif?auto=format&fit=crop&w=600&q=80', // Moon/Yareach
   '2_5': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%9B%D7%95%D7%9B%D7%91%D7%99%D7%9D/BCO.31edfaa7-4c5d-497c-a956-7e9853f4959a.avif?auto=format&fit=crop&w=600&q=80', // Stars/Kochavim
-  '2_6': 'https://6a56a054cec0a76b214808b3.imgix.net/cloud1/BCO.98306390-f77f-44dd-98cc-a17be44a4516.png?auto=format&fit=crop&w=600&q=80', // Thick clouds/Avim
-  '2_7': 'https://6a56a054cec0a76b214808b3.imgix.net/ananan/clouds-floating-sky-sunset_361322-1601.jpg?auto=format&fit=crop&w=600&q=80', // Clouds of Glory/Anane Kavod
+  '2_6': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%A2%D7%91%D7%99%D7%9D/BCO.98306390-f77f-44dd-98cc-a17be44a4516.avif?auto=format&fit=crop&w=600&q=80', // Thick clouds/Avim
+  '2_7': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%A2%D7%A0%D7%A0%D7%99/clouds-floating-sky-sunset_361322-1601.avif?auto=format&fit=crop&w=600&q=80', // Clouds of Glory/Anane Kavod
   '2_8': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%A8%D7%95%D7%97/drawing-tree-with-leaves-blowing-wind-is-creative_922357-40501.avif?auto=format&fit=crop&w=600&q=80', // Wind/Ruach
-  '2_9': 'https://6a56a054cec0a76b214808b3.imgix.net/barak/BCO.06a11798-6968-4a97-a43c-452221ed3137.png?auto=format&fit=crop&w=600&q=80', // Lightning/Brakim
+  '2_9': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%91%D7%A8%D7%A7%D7%99%D7%9D/BCO.06a11798-6968-4a97-a43c-452221ed3137.avif?auto=format&fit=crop&w=600&q=80', // Lightning/Brakim
   '2_10': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%98%D7%9C/morning-splendor-dew-green-leaf_1123377-2070.avif?auto=format&fit=crop&w=600&q=80', // Dew/Tal
   '2_11': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%92%D7%A9%D7%9D/nature-photo-rainy-day_935395-74218.avif?auto=format&fit=crop&w=600&q=80', // Rains/Geshamim
 
@@ -61,7 +61,7 @@ export const VERSE_IMAGES: Record<string, string> = {
   '4_19': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%97%D7%A1%D7%99%D7%93%D7%94/c1d05593-cb6d-4f02-b9cf-a8473b5652aa.avif?auto=format&fit=crop&w=800&h=500&q=80', // Stork/Chasida
   '4_20': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%A2%D7%95%D7%A8%D7%91/beautiful-picture-bird-raven-crow-autumn-nature-corvus-frugilegus_926199-2569533.avif?auto=format&fit=crop&w=800&h=500&q=80', // Raven/Orev
   '4_21': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%96%D7%A8%D7%96%D7%99%D7%A8/image.avif?auto=format&fit=crop&w=800&h=500&q=80', // Starling/Zarzir
-  '4_22': 'https://6a56a054cec0a76b214808b3.imgix.net/%D7%90%D7%95%D7%96%D7%96/image.jpg?auto=format&fit=crop&w=800&h=500&q=80', // Domestic goose/Avaz shebabayit
+  '4_22': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%90%D7%95%D7%961/image.avif?auto=format&fit=crop&w=800&h=500&q=80', // Domestic goose/Avaz shebabayit
   '4_23': 'https://6a81e5d77cad5075a99e22f3.imgix.net/%D7%90%D7%95%D7%962/image.avif?auto=format&fit=crop&w=800&h=500&q=80', // Wild goose/Avaz habar
   '4_24': 'https://6a873d9bad1ee45a52d283f5.imgix.net/%D7%A4%D7%A8%D7%95%D7%92%D7%99%D7%95%D7%AA/close-up-cute-baby-chicks.avif?auto=format&fit=crop&w=800&h=500&q=80', // Chicks/Progiot
   '4_25': 'https://6a873d9bad1ee45a52d283f5.imgix.net/%D7%A8%D7%97%D7%9E%D7%94/image.avif?auto=format&fit=crop&w=800&h=500&q=80', // Vulture/Rachamah
@@ -99,7 +99,7 @@ export const VERSE_IMAGES: Record<string, string> = {
   '6_2': 'https://img.magnific.com/premium-photo/beautiful-bird-flowers_54368-19.jpg?auto=format&fit=crop&w=800&h=500&q=80', // Worms of creeping things/Elim shebasheratzim
   '6_3': 'https://6a873d9bad1ee45a52d283f5.imgix.net/%D7%A0%D7%97%D7%A9/blue-viper-snake-closeup-face-head-viper-snake-blue-insularis.avif?auto=format&fit=crop&w=800&h=500&q=80', // Snake/Nachash
   '6_4': 'https://6a873d9bad1ee45a52d283f5.imgix.net/%D7%A2%D7%A7%D7%A8%D7%91/image.avif?auto=format&fit=crop&w=800&h=500&q=80', // Scorpion/Akrav
-  '6_5': 'https://6a56a054cec0a76b214808b3.imgix.net/ackuk/realistic-snail-nature.jpg?auto=format&fit=crop&w=800&h=500&q=80', // Snail/Shablul
+  '6_5': 'https://6a873d9bad1ee45a52d283f5.imgix.net/%D7%A9%D7%91%D7%9C%D7%95%D7%9C/realistic-snail-nature.avif?auto=format&fit=crop&w=800&h=500&q=80', // Snail/Shablul
   '6_6': 'https://6a873d9bad1ee45a52d283f5.imgix.net/%D7%A0%D7%9E%D7%9C%D7%94/ant-colony-works-together-gather-food-generated-by-ai.avif?auto=format&fit=crop&w=800&h=500&q=80', // Ant/Nemalah
   '6_7': 'https://6a873d9bad1ee45a52d283f5.imgix.net/%D7%A2%D7%9B%D7%91%D7%A8/fluffy-rodent-sitting-green-autumn-grass-generated-by-ai.avif?auto=format&fit=crop&w=800&h=500&q=80', // Mouse/Achbar
   '6_8': 'https://6a873d9bad1ee45a52d283f5.imgix.net/%D7%97%D7%9C%D7%93%D7%94/image.avif?auto=format&fit=crop&w=800&h=500&q=80', // Weasel/Chuldah
