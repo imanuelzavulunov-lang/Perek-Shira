@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DailyReminder } from '../types';
 import { initAuth, googleSignIn, getAccessToken, setAccessToken, createGoogleTask, clearExistingPerekShiraTasks, fetchExistingPerekShiraReminder, logout } from '../lib/gauth';
 import { syncUserReminderToFirestore } from '../lib/userDataService';
+import { safeStorage } from '../lib/storage';
 
 interface ReminderModalProps {
   isOpen: boolean;
@@ -161,7 +162,7 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
       setTime('');
       setRecurrence('once');
       setIsEditing(true);
-      localStorage.removeItem('perek-shira-reminder');
+      safeStorage.removeItem('perek-shira-reminder');
       onSave({ enabled: false, time: '', days: [], recurrence: 'once' });
       setSuccessMsg('התזכורת בוטלה בהצלחה.');
       setTimeout(() => {
@@ -196,7 +197,7 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
       setDays([]);
       setRecurrence('once');
       setIsEditing(true);
-      localStorage.removeItem('perek-shira-reminder');
+      safeStorage.removeItem('perek-shira-reminder');
       onSave({ enabled: false, time: '', days: [], recurrence: 'once' });
       setSuccessMsg('התנתקת מחשבון Google בהצלחה. הגדרות התזכורת אופסו.');
       setTimeout(() => setSuccessMsg(null), 3000);
@@ -262,7 +263,7 @@ export default function ReminderModal({ isOpen, onClose, reminder, onSave }: Rem
         await syncUserReminderToFirestore(currentUser.uid, updatedReminderData);
       }
       
-      localStorage.setItem('perek-shira-reminder', JSON.stringify(updatedReminderData));
+      safeStorage.setItem('perek-shira-reminder', JSON.stringify(updatedReminderData));
       onSave(updatedReminderData);
 
       setSaved(true);

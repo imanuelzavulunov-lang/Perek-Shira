@@ -1,5 +1,6 @@
 import { GoogleAuthProvider, onAuthStateChanged, User, signInWithPopup, signOut } from 'firebase/auth';
 import { auth } from './firebase';
+import { safeStorage } from './storage';
 
 export { auth };
 
@@ -24,8 +25,8 @@ const TOKEN_EXP_KEY = 'g_tasks_access_token_v2_exp';
 export const getAccessToken = (): string | null => {
   if (cachedAccessToken) return cachedAccessToken;
   try {
-    const stored = localStorage.getItem(TOKEN_KEY);
-    const exp = localStorage.getItem(TOKEN_EXP_KEY);
+    const stored = safeStorage.getItem(TOKEN_KEY);
+    const exp = safeStorage.getItem(TOKEN_EXP_KEY);
     if (stored && exp && Date.now() < Number(exp)) {
       cachedAccessToken = stored;
       return stored;
@@ -40,13 +41,13 @@ export const setAccessToken = (token: string | null) => {
   cachedAccessToken = token;
   try {
     if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-      localStorage.setItem(TOKEN_EXP_KEY, String(Date.now() + 55 * 60 * 1000));
+      safeStorage.setItem(TOKEN_KEY, token);
+      safeStorage.setItem(TOKEN_EXP_KEY, String(Date.now() + 55 * 60 * 1000));
     } else {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(TOKEN_EXP_KEY);
-      localStorage.removeItem('g_tasks_access_token');
-      localStorage.removeItem('g_tasks_access_token_exp');
+      safeStorage.removeItem(TOKEN_KEY);
+      safeStorage.removeItem(TOKEN_EXP_KEY);
+      safeStorage.removeItem('g_tasks_access_token');
+      safeStorage.removeItem('g_tasks_access_token_exp');
     }
   } catch (e) {
     // ignore
@@ -57,14 +58,27 @@ export const setAccessToken = (token: string | null) => {
 export const initAuth = (
   onStateChanged: (user: User | null, token: string | null) => void
 ) => {
-  return onAuthStateChanged(auth, (user: User | null) => {
-    const token = getAccessToken();
-    onStateChanged(user, user ? token : null);
-  });
+  if (!auth) {
+    onStateChanged(null, null);
+    return () => {};
+  }
+  try {
+    return onAuthStateChanged(auth, (user: User | null) => {
+      const token = getAccessToken();
+      onStateChanged(user, user ? token : null);
+    });
+  } catch (e: any) {
+    console.warn('[gauth] onAuthStateChanged failed: ' + String(e?.message || e));
+    onStateChanged(null, null);
+    return () => {};
+  }
 };
 
 // Must be called from a button click or user interaction
 export const googleSignIn = async (requestTasksScope = true): Promise<{ user: User; accessToken: string | null } | null> => {
+  if (!auth) {
+    throw new Error('שירות ההתחברות אינו זמין כרגע.');
+  }
   try {
     const selectedProvider = requestTasksScope ? tasksProvider : provider;
     const result = await signInWithPopup(auth, selectedProvider);

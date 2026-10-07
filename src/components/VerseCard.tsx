@@ -46,10 +46,8 @@ export default function VerseCard({
     heebo: 'font-heebo',
     frank: 'font-frank',
     hadassah: 'font-hadassah',
-    david: 'font-david',
     rubik: 'font-rubik',
     varela: 'font-varela',
-    amatic: 'font-amatic',
   }[settings.fontFamily] || 'font-frank';
   
   const fontSizeClasses = {
@@ -58,7 +56,7 @@ export default function VerseCard({
     lg: { title: 'text-[25px] md:text-[30px]', hebrew: 'text-[22px] md:text-[25px]' },
     xl: { title: 'text-[26px] md:text-[32px]', hebrew: 'text-2xl md:text-[28px]' },
     '2xl': { title: 'text-[33px] md:text-[40px]', hebrew: 'text-3xl' },
-  }[settings.fontSize];
+  }[settings.fontSize] || { title: 'text-[21px] md:text-[23px]', hebrew: 'text-[18px] md:text-[19px]' };
 
   // Copy to Clipboard
   const handleCopy = () => {
@@ -109,7 +107,7 @@ ${formattedVerse} (${verse.sourceHebrew})
             disabled={isOtherPlaying}
             className={`p-2 rounded-lg border transition-all ${
               isOtherPlaying
-                ? 'border-border-color/40 text-text-muted opacity-40 cursor-not-allowed'
+                ? 'border-border-color/40 text-text-secondary opacity-40 cursor-not-allowed'
                 : isPlaying
                 ? 'bg-primary-accent text-white border-primary-accent cursor-pointer'
                 : 'border-border-color text-text-secondary hover:bg-bg-muted cursor-pointer'

@@ -17,6 +17,7 @@
   --color-bg-muted: var(--bg-muted);
   --color-primary-accent: var(--primary-accent);
   --color-primary-accent-hover: var(--primary-accent-hover);
+  --color-nav-bg: var(--nav-bg);
 }
 
 .font-frank {
@@ -36,6 +37,7 @@
   --bg-muted: #f0ebe1;
   --primary-accent: #152935;
   --primary-accent-hover: #121e29;
+  --nav-bg: #152935;
 }
 
 [data-theme="yellow"], [data-theme="sepia"] {
@@ -47,6 +49,7 @@
   --bg-muted: #f3e7c4;
   --primary-accent: #8b6200;
   --primary-accent-hover: #6d4b00;
+  --nav-bg: #856121;
 }
 
 [data-theme="dark"] {
@@ -58,6 +61,7 @@
   --bg-muted: #282828;
   --primary-accent: #7ca5ce;
   --primary-accent-hover: #9bbce0;
+  --nav-bg: #1c1c1c;
 }
 
 [data-theme="dark"] .text-primary-accent {
@@ -83,6 +87,7 @@
   --bg-muted: #1a273e;
   --primary-accent: #60a5fa;
   --primary-accent-hover: #93c5fd;
+  --nav-bg: #0f192b;
 }
 
 [data-theme="dark-blue"] .text-primary-accent {

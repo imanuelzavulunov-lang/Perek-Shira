@@ -11,6 +11,7 @@ import { Verse, AppSettings, DailyReminder, DEFAULT_SETTINGS } from './types';
 import { speakVerse } from './lib/speech';
 import { initAuth } from './lib/gauth';
 import { syncUserSettingsToFirestore, listenToUserData } from './lib/userDataService';
+import { safeStorage } from './lib/storage';
 import SettingsPanel from './components/SettingsPanel';
 import SearchAndFilter from './components/SearchAndFilter';
 import VerseCard from './components/VerseCard';
@@ -53,10 +54,10 @@ export default function App() {
     };
   }, []);
 
-  const isStandalone = typeof window !== 'undefined' && (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    (window.navigator as any).standalone === true ||
-    document.referrer.includes('android-app://')
+  const isStandalone = typeof window !== 'undefined' && Boolean(
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    (window.navigator as any)?.standalone === true ||
+    (typeof document !== 'undefined' && document.referrer && document.referrer.includes('android-app://'))
   );
 
   const handleInstallApp = async () => {
@@ -191,25 +192,39 @@ export default function App() {
   const scrollTimeoutRef = useRef<any | null>(null);
 
   // --- Theme & Appearance States ---
+  const sanitizeSettings = (raw: any, fallback: AppSettings = DEFAULT_SETTINGS): AppSettings => {
+    const validFonts: AppSettings['fontFamily'][] = ['heebo', 'frank', 'hadassah', 'rubik', 'varela'];
+    const validThemes: AppSettings['theme'][] = ['light', 'yellow', 'dark', 'dark-blue'];
+    const validFontSizes: AppSettings['fontSize'][] = ['sm', 'base', 'lg', 'xl', '2xl'];
+    return {
+      theme: validThemes.includes(raw?.theme) ? raw.theme : fallback.theme,
+      fontFamily: validFonts.includes(raw?.fontFamily) ? raw.fontFamily : fallback.fontFamily,
+      fontSize: validFontSizes.includes(raw?.fontSize) ? raw.fontSize : fallback.fontSize,
+      showImages: raw?.showImages !== undefined ? Boolean(raw.showImages) : fallback.showImages,
+    };
+  };
+
   const [settings, setSettings] = useState<AppSettings>(() => {
-    const saved = localStorage.getItem('perek-shira-settings');
-    if (saved) {
-      try {
+    let resolvedSettings = DEFAULT_SETTINGS;
+    try {
+      const saved = safeStorage.getItem('perek-shira-settings');
+      if (saved) {
         const parsed = JSON.parse(saved);
-        const validFonts = ['heebo', 'frank', 'hadassah', 'rubik', 'varela'];
-        const validThemes = ['light', 'yellow', 'dark', 'dark-blue'];
-        const validFontSizes = ['sm', 'base', 'lg', 'xl', '2xl'];
-        return {
-          theme: validThemes.includes(parsed.theme) ? parsed.theme : DEFAULT_SETTINGS.theme,
-          fontFamily: validFonts.includes(parsed.fontFamily) ? parsed.fontFamily : DEFAULT_SETTINGS.fontFamily,
-          fontSize: validFontSizes.includes(parsed.fontSize) ? parsed.fontSize : DEFAULT_SETTINGS.fontSize,
-          showImages: parsed.showImages !== undefined ? Boolean(parsed.showImages) : DEFAULT_SETTINGS.showImages,
-        };
-      } catch (e) {
-        // Fallback
+        resolvedSettings = sanitizeSettings(parsed, DEFAULT_SETTINGS);
       }
+    } catch (e) {
+      console.warn('Error reading settings from safeStorage:', e);
     }
-    return DEFAULT_SETTINGS;
+
+    // Immediately synchronize data-theme on document.documentElement
+    if (typeof document !== 'undefined') {
+      const root = document.documentElement;
+      root.setAttribute('data-theme', resolvedSettings.theme);
+      root.classList.remove('theme-light', 'theme-dark', 'theme-warm', 'theme-parchment', 'theme-sky', 'theme-yellow', 'theme-dark-blue', 'theme-olive');
+      root.classList.add(`theme-${resolvedSettings.theme}`);
+    }
+
+    return resolvedSettings;
   });
 
   // --- Scroll Position Preservation on Settings Change ---
@@ -283,15 +298,24 @@ export default function App() {
 
   // --- Daily Reminder States ---
   const [reminder, setReminder] = useState<DailyReminder>(() => {
-    const saved = localStorage.getItem('perek-shira-reminder');
-    if (saved) {
-      try {
+    try {
+      const saved = safeStorage.getItem('perek-shira-reminder');
+      if (saved) {
         const parsed = JSON.parse(saved);
-        if (!parsed.enabled) {
-          parsed.recurrence = 'once';
+        if (parsed && typeof parsed === 'object') {
+          if (!parsed.enabled) {
+            parsed.recurrence = 'once';
+          }
+          return {
+            enabled: Boolean(parsed.enabled),
+            time: typeof parsed.time === 'string' ? parsed.time : '',
+            days: Array.isArray(parsed.days) ? parsed.days : [],
+            recurrence: parsed.recurrence === 'weekly' ? 'weekly' : 'once',
+          };
         }
-        return parsed;
-      } catch (e) {}
+      }
+    } catch (e) {
+      console.warn('Error reading reminder from safeStorage:', e);
     }
     return { enabled: false, time: '', days: [], recurrence: 'once' };
   });
@@ -310,7 +334,7 @@ export default function App() {
     if (!currentUser?.uid) return;
     const unsubData = listenToUserData(currentUser.uid, (data) => {
       if (data?.settings) {
-        setSettings((prev) => ({ ...prev, ...data.settings }));
+        setSettings((prev) => sanitizeSettings(data.settings, prev));
       }
       if (data?.reminder) {
         setReminder((prev) => ({ ...prev, ...data.reminder }));
@@ -319,22 +343,24 @@ export default function App() {
     return () => unsubData();
   }, [currentUser]);
 
-  // --- Sync to LocalStorage & HTML Class & Firestore ---
+  // --- Synchronize data-theme on document.documentElement immediately before paint ---
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-theme', settings.theme);
+    root.classList.remove('theme-light', 'theme-dark', 'theme-warm', 'theme-parchment', 'theme-sky', 'theme-yellow', 'theme-dark-blue', 'theme-olive');
+    root.classList.add(`theme-${settings.theme}`);
+  }, [settings.theme]);
+
+  // --- Sync to LocalStorage & Firestore ---
   useEffect(() => {
-    localStorage.setItem('perek-shira-settings', JSON.stringify(settings));
+    safeStorage.setItem('perek-shira-settings', JSON.stringify(settings));
     if (currentUser?.uid) {
       syncUserSettingsToFirestore(currentUser.uid, settings);
     }
-    
-    // Apply theme attribute and class to <html> root element
-    const root = document.documentElement;
-    root.setAttribute('data-theme', settings.theme);
-    root.classList.remove('theme-light', 'theme-dark', 'theme-warm', 'theme-parchment', 'theme-sky', 'theme-yellow', 'theme-dark-blue');
-    root.classList.add(`theme-${settings.theme}`);
   }, [settings, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('perek-shira-reminder', JSON.stringify(reminder));
+    safeStorage.setItem('perek-shira-reminder', JSON.stringify(reminder));
   }, [reminder]);
 
   // --- Lock Body & HTML Scroll when Reminder Modal is open ---
@@ -433,6 +459,8 @@ export default function App() {
 
   // --- Scroll Spy / Intersection Observer ---
   useEffect(() => {
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return;
+
     const handleIntersection = (entries: IntersectionObserverEntry[]) => {
       if (isScrollingRef.current) return;
 
@@ -452,24 +480,31 @@ export default function App() {
       }
     };
 
-    const observer = new IntersectionObserver(handleIntersection, {
-      root: null, // observe viewport
-      rootMargin: '-20% 0px -60% 0px',
-      threshold: 0,
-    });
+    let observer: IntersectionObserver | null = null;
+    try {
+      observer = new IntersectionObserver(handleIntersection, {
+        root: null, // observe viewport
+        rootMargin: '-20% 0px -60% 0px',
+        threshold: 0,
+      });
 
-    const targets = [
-      document.getElementById('main-hero'),
-      ...Array.from({ length: 6 }, (_, i) => document.getElementById(`chapter-section-${i + 1}`)),
-      document.getElementById('yehi-ratzon-card')
-    ];
+      const targets = [
+        document.getElementById('main-hero'),
+        ...Array.from({ length: 6 }, (_, i) => document.getElementById(`chapter-section-${i + 1}`)),
+        document.getElementById('yehi-ratzon-card')
+      ];
 
-    targets.forEach(target => {
-      if (target) observer.observe(target);
-    });
+      targets.forEach(target => {
+        if (target && observer) observer.observe(target);
+      });
+    } catch (e) {
+      console.warn('IntersectionObserver error:', e);
+    }
 
     return () => {
-      observer.disconnect();
+      if (observer) {
+        observer.disconnect();
+      }
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
@@ -499,10 +534,7 @@ export default function App() {
   return (
     <div id="main-app-container" className={`min-h-screen flex flex-col bg-bg-app select-text transition-colors duration-200 ${fontClass}`}>
       <nav 
-        className="h-16 flex items-center px-4 md:px-8 justify-between text-white fixed top-0 left-0 right-0 z-50 select-none shadow-md shrink-0 transition-colors duration-200" 
-        style={{ 
-          backgroundColor: settings.theme === 'yellow' ? '#856121' : '#152935'
-        }}
+        className="h-16 flex items-center px-4 md:px-8 justify-between text-white fixed top-0 left-0 right-0 z-50 select-none shadow-md shrink-0 transition-colors duration-200 bg-nav-bg" 
         dir="rtl"
       >
         <div className="flex items-center gap-3.5">
@@ -684,7 +716,7 @@ export default function App() {
 
                 {/* Chapter Back to Top button */}
                 {chapter.id === 6 && (
-                  <div className="flex justify-center" style={{ marginTop: '35px', marginBottom: '-13px' }}>
+                  <div className="flex justify-center mt-[35px] -mb-[13px]">
                     <button
                       onClick={scrollToTop}
                       className="px-7 py-3 border border-border-color bg-bg-card hover:bg-bg-muted text-text-primary text-sm font-bold rounded-full transition-all cursor-pointer shadow-3xs flex items-center gap-2"
@@ -766,10 +798,9 @@ export default function App() {
           }
           window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
         }}
-        className={`fixed bottom-6 left-6 md:bottom-8 md:left-8 z-40 text-white p-3 rounded-full shadow-md cursor-pointer border border-white/10 flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 hover:brightness-110 ${
+        className={`fixed bottom-6 left-6 md:bottom-8 md:left-8 z-40 bg-nav-bg text-white p-3 rounded-full shadow-md cursor-pointer border border-white/10 flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 hover:brightness-110 ${
           showScrollDownBtn ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-75 pointer-events-none'
         }`}
-        style={{ backgroundColor: settings.theme === 'yellow' ? '#856121' : '#1e3040' }}
         title="גלול למטה"
         dir="rtl"
       >

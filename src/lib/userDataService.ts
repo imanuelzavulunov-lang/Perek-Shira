@@ -11,33 +11,33 @@ export interface UserProfileData {
 }
 
 export const syncUserSettingsToFirestore = async (userId: string, settings: AppSettings) => {
-  if (!userId) return;
+  if (!userId || !db) return;
   try {
     const userDocRef = doc(db, 'users', userId, 'data', 'profile');
     await setDoc(userDocRef, {
       settings,
       lastUpdated: new Date().toISOString(),
     }, { merge: true });
-  } catch (err) {
-    console.warn('Could not sync user settings to Firestore:', err);
+  } catch (err: any) {
+    console.warn('Could not sync user settings to Firestore: ' + String(err?.message || err));
   }
 };
 
 export const syncUserReminderToFirestore = async (userId: string, reminder: UserProfileData['reminder']) => {
-  if (!userId) return;
+  if (!userId || !db) return;
   try {
     const userDocRef = doc(db, 'users', userId, 'data', 'profile');
     await setDoc(userDocRef, {
       reminder,
       lastUpdated: new Date().toISOString(),
     }, { merge: true });
-  } catch (err) {
-    console.warn('Could not sync reminder to Firestore:', err);
+  } catch (err: any) {
+    console.warn('Could not sync reminder to Firestore: ' + String(err?.message || err));
   }
 };
 
 export const markDailyCompletionInFirestore = async (userId: string) => {
-  if (!userId) return;
+  if (!userId || !db) return;
   try {
     const todayStr = new Date().toISOString().split('T')[0];
     const userDocRef = doc(db, 'users', userId, 'data', 'profile');
@@ -49,8 +49,8 @@ export const markDailyCompletionInFirestore = async (userId: string) => {
       readCount: prevCount + 1,
       lastUpdated: new Date().toISOString(),
     }, { merge: true });
-  } catch (err) {
-    console.warn('Could not mark daily completion in Firestore:', err);
+  } catch (err: any) {
+    console.warn('Could not mark daily completion in Firestore: ' + String(err?.message || err));
   }
 };
 
@@ -58,13 +58,18 @@ export const listenToUserData = (
   userId: string,
   onData: (data: UserProfileData) => void
 ) => {
-  if (!userId) return () => {};
-  const userDocRef = doc(db, 'users', userId, 'data', 'profile');
-  return onSnapshot(userDocRef, (docSnap) => {
-    if (docSnap.exists()) {
-      onData(docSnap.data() as UserProfileData);
-    }
-  }, (err) => {
-    console.warn('Firestore snapshot listener error:', err);
-  });
+  if (!userId || !db) return () => {};
+  try {
+    const userDocRef = doc(db, 'users', userId, 'data', 'profile');
+    return onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        onData(docSnap.data() as UserProfileData);
+      }
+    }, (err) => {
+      console.warn('Firestore snapshot listener error: ' + String(err?.message || err));
+    });
+  } catch (err: any) {
+    console.warn('Error setting up Firestore listener: ' + String(err?.message || err));
+    return () => {};
+  }
 };

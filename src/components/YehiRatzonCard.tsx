@@ -14,7 +14,6 @@ export default function YehiRatzonCard({ settings }: YehiRatzonCardProps) {
     heebo: 'font-heebo',
     frank: 'font-frank',
     hadassah: 'font-hadassah',
-    david: 'font-david',
     rubik: 'font-rubik',
     varela: 'font-varela',
   }[settings.fontFamily] || 'font-frank';

@@ -1,9 +1,52 @@
 <!doctype html>
-<html lang="he" dir="rtl">
+<html lang="he" dir="rtl" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>פרק שירה - שירת הבריאה</title>
+
+    <!-- Immediate theme synchronization to prevent flash of unstyled content (FOUC) -->
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('perek-shira-settings');
+          if (saved) {
+            var parsed = JSON.parse(saved);
+            var validThemes = ['light', 'yellow', 'dark', 'dark-blue'];
+            if (parsed && parsed.theme && validThemes.indexOf(parsed.theme) !== -1) {
+              document.documentElement.setAttribute('data-theme', parsed.theme);
+              document.documentElement.classList.add('theme-' + parsed.theme);
+            }
+          }
+        } catch (e) {
+          // ignore in restricted iframe
+        }
+      })();
+    </script>
+
+    <!-- Immediate cache and stale Service Worker cleanup to prevent blank screen in preview -->
+    <script>
+      (function() {
+        try {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+              for (var i = 0; i < registrations.length; i++) {
+                registrations[i].unregister().catch(function() {});
+              }
+            }).catch(function() {});
+          }
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              for (var j = 0; j < keys.length; j++) {
+                caches.delete(keys[j]).catch(function() {});
+              }
+            }).catch(function() {});
+          }
+        } catch (e) {
+          // ignore
+        }
+      })();
+    </script>
     <meta name="description" content="פרק שירה המלא מנוקד ומבואר עם אפשרות הקראה קולית, תזכורות יומיות ותמונות. כל קטעי השירה אותם שרות כל הבריות בשבח הקב&quot;ה." />
     <meta name="keywords" content="פרק שירה, שירת הבריאה, תפילה, תהילים, סגולה, הקראה קולית" />
     <meta name="author" content="פרק שירה" />
@@ -72,7 +115,17 @@
         </div>
         <div style="text-align: center;">
           <div style="font-family: 'Frank Ruhl Libre', serif; font-size: 32px; font-weight: 800; color: #fde68a; margin-bottom: 6px; letter-spacing: 0.025em;">פרק שירה</div>
-          <div style="font-size: 15px; color: #cbd5e1; font-weight: 500;">טוען את האפליקציה...</div>
+          <div id="splash-status" style="font-size: 15px; color: #cbd5e1; font-weight: 500;">טוען את האפליקציה...</div>
+          <div id="splash-actions" style="display: none; margin-top: 16px; flex-direction: column; align-items: center; gap: 8px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+              <button id="splash-retry-btn" onclick="clearCacheAndReload()" style="padding: 8px 18px; border-radius: 9999px; background-color: #fde68a; color: #0f172a; font-weight: 700; font-size: 13px; border: none; cursor: pointer;">
+                רענן ונקה זיכרון מטמון
+              </button>
+              <a id="splash-newtab-btn" href="#" target="_blank" rel="noopener noreferrer" style="padding: 8px 18px; border-radius: 9999px; background-color: rgba(255,255,255,0.15); color: #ffffff; font-weight: 600; font-size: 13px; text-decoration: none; display: inline-block;">
+                פתח בלשונית חדשה ↗
+              </a>
+            </div>
+          </div>
         </div>
         <!-- Spinner -->
         <div style="width: 30px; height: 30px; border: 3px solid rgba(253, 230, 138, 0.2); border-top-color: #fde68a; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
@@ -89,33 +142,108 @@
     <script type="module" src="/src/main.tsx"></script>
     <script>
       (function() {
-        const startTime = Date.now();
-        const MIN_DISPLAY_TIME = 1500; // Display for at least 1.5 seconds for a pleasant loading feel
+        var startTime = Date.now();
+        var MIN_DISPLAY_TIME = 500;
+        var MAX_WAIT_TIME = 3500;
+        var pollInterval = null;
 
-        function fadeOutSplash() {
-          const splash = document.getElementById('initial-splash');
-          if (!splash) return;
+        function doFadeOut() {
+          if (pollInterval) clearInterval(pollInterval);
+          var splash = document.getElementById('initial-splash');
+          if (!splash || splash.getAttribute('data-fading')) return;
+          splash.setAttribute('data-fading', 'true');
 
-          const elapsed = Date.now() - startTime;
-          const remaining = Math.max(0, MIN_DISPLAY_TIME - elapsed);
+          var elapsed = Date.now() - startTime;
+          var remaining = Math.max(0, MIN_DISPLAY_TIME - elapsed);
 
           setTimeout(function() {
-            splash.style.transition = 'opacity 0.45s ease, visibility 0.45s ease';
+            splash.style.transition = 'opacity 0.35s ease, visibility 0.35s ease';
             splash.style.opacity = '0';
             splash.style.pointerEvents = 'none';
             setTimeout(function() {
               if (splash.parentNode) {
                 splash.remove();
               }
-            }, 450);
+            }, 350);
           }, remaining);
         }
 
-        if (document.readyState === 'complete') {
-          fadeOutSplash();
-        } else {
-          window.addEventListener('load', fadeOutSplash);
+        function checkMounted() {
+          var appEl = document.getElementById('main-app-container');
+          var errorCard = document.getElementById('error-boundary-card');
+          if ((appEl && appEl.offsetHeight > 80) || (errorCard && errorCard.offsetHeight > 80)) {
+            doFadeOut();
+            return true;
+          }
+          return false;
         }
+
+        window.clearCacheAndReload = function() {
+          try {
+            if ('caches' in window) {
+              caches.keys().then(function(names) {
+                for (var i = 0; i < names.length; i++) caches.delete(names[i]);
+              });
+            }
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                for (var j = 0; j < regs.length; j++) regs[j].unregister();
+              });
+            }
+          } catch (e) {}
+          setTimeout(function() {
+            window.location.reload();
+          }, 150);
+        };
+
+        // Populate new-tab button link
+        var newTabBtn = document.getElementById('splash-newtab-btn');
+        if (newTabBtn) {
+          newTabBtn.href = window.location.href;
+        }
+
+        // Start polling for React to mount into #root
+        pollInterval = setInterval(function() {
+          if (checkMounted()) {
+            clearInterval(pollInterval);
+          }
+        }, 50);
+
+        // Fallback: After MAX_WAIT_TIME, if React hasn't mounted, display friendly recovery actions
+        setTimeout(function() {
+          if (!checkMounted()) {
+            clearInterval(pollInterval);
+            var statusEl = document.getElementById('splash-status');
+            var actionsEl = document.getElementById('splash-actions');
+            if (statusEl) statusEl.textContent = 'הטעינה מתעכבת עקב שמירה בזיכרון המטמון.';
+            if (actionsEl) actionsEl.style.display = 'flex';
+          }
+        }, MAX_WAIT_TIME);
+
+        function handleEarlyError(msg) {
+          var appEl = document.getElementById('main-app-container');
+          if (!appEl || appEl.offsetHeight < 80) {
+            var splash = document.getElementById('initial-splash');
+            var statusEl = document.getElementById('splash-status');
+            var actionsEl = document.getElementById('splash-actions');
+            if (splash) {
+              splash.removeAttribute('data-fading');
+              splash.style.opacity = '1';
+              splash.style.pointerEvents = 'auto';
+            }
+            if (statusEl) statusEl.textContent = 'הודעה: ' + msg;
+            if (actionsEl) actionsEl.style.display = 'flex';
+          }
+        }
+
+        window.addEventListener('error', function(e) {
+          handleEarlyError(e && e.message ? e.message : 'טעינת הרכיבים נכשלה');
+        });
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = e && e.reason ? (e.reason.message || String(e.reason)) : 'שגיאת רשת בלתי צפויה';
+          handleEarlyError(reason);
+        });
       })();
     </script>
   </body>
