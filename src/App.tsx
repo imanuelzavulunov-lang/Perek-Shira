@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   Bell,
+  BellRing,
   ChevronUp,
   ChevronDown,
   Settings,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PEREK_SHIRA_DATA } from './data';
-import { Verse, AppSettings, DailyReminder, DEFAULT_SETTINGS } from './types';
+import { Verse, AppSettings, ReminderItem, DEFAULT_SETTINGS } from './types';
 import { speakVerse } from './lib/speech';
 import { initAuth } from './lib/gauth';
-import { syncUserSettingsToFirestore, listenToUserData } from './lib/userDataService';
+import { syncUserSettingsToFirestore, syncUserRemindersToFirestore, listenToUserData } from './lib/userDataService';
 import { safeStorage } from './lib/storage';
 import SettingsPanel from './components/SettingsPanel';
 import SearchAndFilter from './components/SearchAndFilter';
@@ -21,6 +22,7 @@ import IntroSection from './components/IntroSection';
 import YehiRatzonCard from './components/YehiRatzonCard';
 import BottomIntroSection from './components/BottomIntroSection';
 import SequentialPlayToast from './components/SequentialPlayToast';
+import { loadReminders, saveReminders, checkAndTriggerReminders } from './lib/notifications';
 
 export default function App() {
   // --- Core States ---
@@ -29,56 +31,8 @@ export default function App() {
   const [isReminderOpen, setIsReminderOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
+  const [activeReminderAlert, setActiveReminderAlert] = useState<ReminderItem | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any | null>(null);
-
-  // --- PWA Installation Support for Android & Desktop ---
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent the default mini-infobar or browser-only prompt
-      e.preventDefault();
-      setDeferredInstallPrompt(e);
-    };
-
-    const handleAppInstalled = () => {
-      setDeferredInstallPrompt(null);
-      showNotification('האפליקציה הותקנה בהצלחה במכשירך!');
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
-  }, []);
-
-  const isStandalone = typeof window !== 'undefined' && Boolean(
-    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
-    (window.navigator as any)?.standalone === true ||
-    (typeof document !== 'undefined' && document.referrer && document.referrer.includes('android-app://'))
-  );
-
-  const handleInstallApp = async () => {
-    if (deferredInstallPrompt) {
-      try {
-        deferredInstallPrompt.prompt();
-        const { outcome } = await deferredInstallPrompt.userChoice;
-        if (outcome === 'accepted') {
-          showNotification('מתקין את האפליקציה במכשירך...');
-        }
-        setDeferredInstallPrompt(null);
-        return;
-      } catch (err) {
-        console.error('Install prompt error:', err);
-      }
-    }
-    
-    // Helpful guide if beforeinstallprompt is not directly triggered
-    showNotification('להתקנה: לחץ על 3 הנקודות בדפדפן ובחר "התקן אפליקציה"');
-  };
-
   // --- Sequential Audio Playback States & Refs ---
   const [toastState, setToastState] = useState<{ verseId: string; chapterId: number } | null>(null);
   const isSequentialRef = useRef(false);
@@ -296,28 +250,9 @@ export default function App() {
     }
   }, [settings]);
 
-  // --- Daily Reminder States ---
-  const [reminder, setReminder] = useState<DailyReminder>(() => {
-    try {
-      const saved = safeStorage.getItem('perek-shira-reminder');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object') {
-          if (!parsed.enabled) {
-            parsed.recurrence = 'once';
-          }
-          return {
-            enabled: Boolean(parsed.enabled),
-            time: typeof parsed.time === 'string' ? parsed.time : '',
-            days: Array.isArray(parsed.days) ? parsed.days : [],
-            recurrence: parsed.recurrence === 'weekly' ? 'weekly' : 'once',
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('Error reading reminder from safeStorage:', e);
-    }
-    return { enabled: false, time: '', days: [], recurrence: 'once' };
+  // --- Daily Reminders List State ---
+  const [reminders, setReminders] = useState<ReminderItem[]>(() => {
+    return loadReminders();
   });
 
   // --- User Auth & Firestore Cloud Sync ---
@@ -336,8 +271,8 @@ export default function App() {
       if (data?.settings) {
         setSettings((prev) => sanitizeSettings(data.settings, prev));
       }
-      if (data?.reminder) {
-        setReminder((prev) => ({ ...prev, ...data.reminder }));
+      if (data?.reminders && Array.isArray(data.reminders)) {
+        setReminders(data.reminders);
       }
     });
     return () => unsubData();
@@ -360,8 +295,79 @@ export default function App() {
   }, [settings, currentUser]);
 
   useEffect(() => {
-    safeStorage.setItem('perek-shira-reminder', JSON.stringify(reminder));
-  }, [reminder]);
+    saveReminders(reminders);
+    if (currentUser?.uid) {
+      syncUserRemindersToFirestore(currentUser.uid, reminders);
+    }
+  }, [reminders, currentUser]);
+
+  // --- Daily Reminders Notification Scheduler for Device Notifications & In-App Alerts ---
+  useEffect(() => {
+    const activeReminders = reminders.filter((r) => r.enabled);
+    if (activeReminders.length === 0) return;
+
+    const onReminderTriggered = (reminder: ReminderItem) => {
+      setActiveReminderAlert(reminder);
+    };
+
+    // 1. Initial immediate check on mount / change
+    checkAndTriggerReminders(reminders, onReminderTriggered);
+
+    // 2. High-precision background Web Worker ticker (runs reliably without browser tab background throttling)
+    let worker: Worker | null = null;
+    try {
+      const workerBlob = new Blob([
+        `
+        var timer = null;
+        self.onmessage = function(e) {
+          if (e.data === 'start') {
+            if (timer) clearInterval(timer);
+            timer = setInterval(function() {
+              self.postMessage('tick');
+            }, 10000);
+          } else if (e.data === 'stop') {
+            if (timer) clearInterval(timer);
+            timer = null;
+          }
+        };
+        `
+      ], { type: 'application/javascript' });
+      worker = new Worker(URL.createObjectURL(workerBlob));
+      worker.onmessage = () => {
+        checkAndTriggerReminders(reminders, onReminderTriggered);
+      };
+      worker.postMessage('start');
+    } catch (e) {
+      console.warn('Worker ticker fallback to interval:', e);
+    }
+
+    // 3. Fallback standard main-thread interval check every 10 seconds
+    const interval = setInterval(() => {
+      checkAndTriggerReminders(reminders, onReminderTriggered);
+    }, 10000);
+
+    // 4. Re-check when window is refocused, tab becomes visible, or device resumes
+    const handleVisibility = () => {
+      checkAndTriggerReminders(reminders, onReminderTriggered);
+    };
+
+    window.addEventListener('focus', handleVisibility);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pageshow', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      if (worker) {
+        try {
+          worker.postMessage('stop');
+          worker.terminate();
+        } catch {}
+      }
+      window.removeEventListener('focus', handleVisibility);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pageshow', handleVisibility);
+    };
+  }, [reminders]);
 
   // --- Lock Body & HTML Scroll when Reminder Modal is open ---
   useEffect(() => {
@@ -573,18 +579,30 @@ export default function App() {
         {/* Stats and Action */}
         <div className="flex items-center gap-3 md:gap-4 text-xs font-semibold">
           {/* Set Reminder Button inside Header Navigation */}
-          <button
-            onClick={() => setIsReminderOpen(true)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full border font-bold cursor-pointer transition-all shadow-3xs text-xs md:text-sm ${
-              reminder.enabled
-                ? 'bg-amber-500/20 border-amber-400/50 text-amber-200 hover:bg-amber-500/30'
-                : 'border-white/20 bg-white/10 hover:bg-white/20 text-white'
-            }`}
-            title="הגדר תזכורת יומית"
-          >
-            <Bell className={`w-4 h-4 ${reminder.enabled ? 'text-amber-400 fill-amber-400/30' : 'text-white'}`} />
-            <span>{reminder.enabled ? 'התזכורת הוגדרה' : 'הגדר תזכורת'}</span>
-          </button>
+          {(() => {
+            const activeRemindersCount = reminders.filter((r) => r.enabled).length;
+            return (
+              <button
+                onClick={() => setIsReminderOpen(true)}
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full border font-bold cursor-pointer transition-all shadow-3xs text-xs md:text-sm ${
+                  activeRemindersCount > 0
+                    ? 'bg-amber-500/20 border-amber-400/50 text-amber-200 hover:bg-amber-500/30'
+                    : 'border-white/20 bg-white/10 hover:bg-white/20 text-white'
+                }`}
+                title="פאנל ניהול תזכורות לפרק שירה"
+              >
+                <div className="relative flex items-center justify-center">
+                  <Bell className={`w-4 h-4 ${activeRemindersCount > 0 ? 'text-amber-400 fill-amber-400/30' : 'text-white'}`} />
+                  {activeRemindersCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  )}
+                </div>
+                <span>
+                  {activeRemindersCount > 0 ? `תזכורות (${activeRemindersCount})` : 'הגדר תזכורת'}
+                </span>
+              </button>
+            );
+          })()}
         </div>
       </nav>
 
@@ -626,8 +644,6 @@ export default function App() {
                   settings={settings}
                   onChange={handleSettingsChange}
                   onCloseSettings={() => setIsMenuOpen(false)}
-                  canInstall={!isStandalone}
-                  onInstall={handleInstallApp}
                   onOpenDownloadImages={() => setIsDownloadModalOpen(true)}
                 />
               </div>
@@ -811,18 +827,69 @@ export default function App() {
       <ReminderModal
         isOpen={isReminderOpen}
         onClose={() => setIsReminderOpen(false)}
-        reminder={reminder}
-        onSave={(newReminder, options) => {
-          setReminder(newReminder);
-          if (!options?.silent) {
-            if (newReminder.enabled) {
-              showNotification('התזכורת הוגדרה בהצלחה! ✨');
-            } else {
-              showNotification('התזכורת בוטלה בהצלחה');
-            }
+        reminders={reminders}
+        onTriggerInAppAlert={setActiveReminderAlert}
+        onSaveReminders={(newReminders, toastMessage) => {
+          setReminders(newReminders);
+          saveReminders(newReminders);
+          if (currentUser?.uid) {
+            syncUserRemindersToFirestore(currentUser.uid, newReminders);
+          }
+          if (toastMessage) {
+            showNotification(toastMessage);
           }
         }}
       />
+
+      {/* Real-time In-App Reminder Pop-up Alert (Works reliably on all devices & webviews) */}
+      <AnimatePresence>
+        {activeReminderAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -60, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -40, scale: 0.95 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="fixed top-4 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 z-[99999] bg-bg-card border-2 border-primary-accent rounded-2xl shadow-2xl p-4 font-sans text-right select-none"
+            dir="rtl"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary-accent/15 text-primary-accent flex items-center justify-center shrink-0 mt-0.5">
+                <BellRing className="w-5 h-5 animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-[11px] font-bold text-primary-accent block uppercase tracking-wider">
+                  תזכורת פעילה 📖
+                </span>
+                <h4 className="text-sm font-bold text-text-primary truncate mt-0.5">
+                  {activeReminderAlert.label || 'קריאת פרק שירה'}
+                </h4>
+                <p className="text-xs text-text-secondary mt-0.5">
+                  הגיע הזמן לקריאת פרק שירה!
+                </p>
+                <div className="flex items-center gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveReminderAlert(null);
+                      animateScrollTo('chapter-1');
+                    }}
+                    className="bg-primary-accent hover:bg-primary-accent-hover text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    קרא עכשיו
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveReminderAlert(null)}
+                    className="border border-border-color text-text-secondary hover:text-text-primary hover:bg-bg-muted text-xs font-bold px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                  >
+                    סגור
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Download All Images Modal */}
       <DownloadImagesModal

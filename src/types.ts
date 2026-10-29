@@ -26,9 +26,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showImages: true,
 };
 
-export interface DailyReminder {
-  enabled: boolean;
+export interface ReminderItem {
+  id: string;
+  label: string; // e.g. "קריאת פרק שירה"
   time: string; // e.g. "08:00"
-  days?: number[]; // e.g. [0, 1, 2, 3, 4, 5, 6] (0 = Sunday, 1 = Monday, etc.)
-  recurrence?: 'once' | 'weekly';
+  days: number[]; // e.g. [0, 1, 2, 3, 4, 5, 6] (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+  enabled: boolean;
+  createdAt: number;
 }
+
+export type DailyReminder = ReminderItem;

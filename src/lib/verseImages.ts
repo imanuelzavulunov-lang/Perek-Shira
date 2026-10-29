@@ -98,7 +98,7 @@ export const VERSE_IMAGES: Record<string, string> = {
   '6_1': 'https://i.ibb.co/TBZ4bDGK/01.avif?auto=format&fit=crop&w=800&h=500&q=80', // Creeping things/Sheratzim
   '6_2': 'https://img.magnific.com/premium-photo/beautiful-bird-flowers_54368-19.jpg?auto=format&fit=crop&w=800&h=500&q=80', // Worms of creeping things/Elim shebasheratzim
   '6_3': 'https://i.ibb.co/ZpMF0hgt/03.jpg?auto=format&fit=crop&w=800&h=500&q=80', // Snake/Nachash
-  '6_4': 'https://i.ibb.co/BHCMWQ01/10.avif?auto=format&fit=crop&w=800&h=500&q=80', // Scorpion/Akrav
+  '6_4': 'https://i.ibb.co/q3g843fv/04.jpg?auto=format&fit=crop&w=800&h=500&q=80', // Scorpion/Akrav
   '6_5': 'https://i.ibb.co/p6CZ57HN/05.jpg?auto=format&fit=crop&w=800&h=500&q=80', // Snail/Shablul
   '6_6': 'https://i.ibb.co/B50PJ3Xn/06.jpg?auto=format&fit=crop&w=800&h=500&q=80', // Ant/Nemalah
   '6_7': 'https://i.ibb.co/mrL7nmjq/07.jpg?auto=format&fit=crop&w=800&h=500&q=80', // Mouse/Achbar

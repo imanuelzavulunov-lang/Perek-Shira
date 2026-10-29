@@ -35,13 +35,13 @@ try {
   }
 }
 
-// Clean up any stale service workers and caches in development or iframe preview
+// Register service worker for device push & local notifications
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const reg of registrations) {
-      reg.unregister().catch(() => {});
-    }
-  }).catch(() => {});
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('[SW Registration failed]:', err);
+    });
+  });
 }
 
 try {

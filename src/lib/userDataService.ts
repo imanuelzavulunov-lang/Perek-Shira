@@ -1,10 +1,11 @@
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
-import { AppSettings, DailyReminder } from '../types';
+import { AppSettings, DailyReminder, ReminderItem } from '../types';
 
 export interface UserProfileData {
   settings?: AppSettings;
   reminder?: DailyReminder;
+  reminders?: ReminderItem[];
   lastReadDate?: string;
   readCount?: number;
   lastUpdated?: string;
@@ -20,6 +21,19 @@ export const syncUserSettingsToFirestore = async (userId: string, settings: AppS
     }, { merge: true });
   } catch (err: any) {
     console.warn('Could not sync user settings to Firestore: ' + String(err?.message || err));
+  }
+};
+
+export const syncUserRemindersToFirestore = async (userId: string, reminders: ReminderItem[]) => {
+  if (!userId || !db) return;
+  try {
+    const userDocRef = doc(db, 'users', userId, 'data', 'profile');
+    await setDoc(userDocRef, {
+      reminders,
+      lastUpdated: new Date().toISOString(),
+    }, { merge: true });
+  } catch (err: any) {
+    console.warn('Could not sync reminders to Firestore: ' + String(err?.message || err));
   }
 };
 

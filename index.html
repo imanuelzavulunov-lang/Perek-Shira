@@ -24,23 +24,16 @@
       })();
     </script>
 
-    <!-- Immediate cache and stale Service Worker cleanup to prevent blank screen in preview -->
+    <!-- Register Service Worker for notifications -->
     <script>
       (function() {
         try {
           if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-              for (var i = 0; i < registrations.length; i++) {
-                registrations[i].unregister().catch(function() {});
-              }
-            }).catch(function() {});
-          }
-          if ('caches' in window) {
-            caches.keys().then(function(keys) {
-              for (var j = 0; j < keys.length; j++) {
-                caches.delete(keys[j]).catch(function() {});
-              }
-            }).catch(function() {});
+            window.addEventListener('load', function() {
+              navigator.serviceWorker.register('/sw.js').catch(function(err) {
+                console.warn('SW registration error:', err);
+              });
+            });
           }
         } catch (e) {
           // ignore

@@ -6,8 +6,6 @@ interface SettingsPanelProps {
   settings: AppSettings;
   onChange: (settings: AppSettings) => void;
   onCloseSettings?: () => void;
-  canInstall?: boolean;
-  onInstall?: () => void;
   onOpenDownloadImages?: () => void;
 }
 
@@ -177,9 +175,13 @@ export default function SettingsPanel({
         </button>
       </div>
 
-      {/* Download All Images Section */}
-      {onOpenDownloadImages && (
-        <div className="pt-1">
+      {/* Action Buttons Section with Divider */}
+      <div className="pt-1 flex flex-col gap-2.5">
+        <hr className="border-0 border-t border-border-color/60 m-0" />
+
+
+
+        {onOpenDownloadImages && (
           <button
             id="btn-download-all-images-settings"
             onClick={() => {
@@ -192,8 +194,8 @@ export default function SettingsPanel({
             <Download className="w-4 h-4 text-amber-500" />
             <span>הורדת כל התמונות</span>
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
     </div>
   );
