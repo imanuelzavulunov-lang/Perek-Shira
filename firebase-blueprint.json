@@ -9,12 +9,17 @@
           "type": "object",
           "description": "User UI preferences such as font size and theme"
         },
+        "reminder": {
+          "type": "object",
+          "description": "Legacy single reminder configuration"
+        },
         "reminders": {
           "type": "array",
           "description": "List of scheduled reminder configurations"
         },
         "lastReadDate": {
           "type": "string",
+          "maxLength": 64,
           "description": "ISO date of the last completed reading"
         },
         "readCount": {
@@ -23,6 +28,7 @@
         },
         "lastUpdated": {
           "type": "string",
+          "maxLength": 64,
           "description": "Last timestamp of user data synchronization"
         }
       }
@@ -34,18 +40,25 @@
       "properties": {
         "userId": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "Creator user identifier"
         },
         "name": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
           "description": "Name for the prayer dedication"
         },
         "purpose": {
           "type": "string",
+          "maxLength": 300,
           "description": "Purpose of the dedication"
         },
         "createdAt": {
           "type": "string",
+          "maxLength": 64,
           "description": "Creation timestamp"
         }
       },
@@ -58,6 +71,9 @@
       "properties": {
         "id": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "Unique subscription identifier"
         },
         "subscription": {
@@ -70,6 +86,8 @@
         },
         "timezone": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
           "description": "Device timezone e.g. Asia/Jerusalem"
         },
         "lastTriggered": {
@@ -81,7 +99,7 @@
           "description": "Timestamp of the last update"
         }
       },
-      "required": ["id", "subscription", "reminders", "timezone"]
+      "required": ["id", "subscription", "reminders", "timezone", "updatedAt"]
     }
   },
   "firestore": {

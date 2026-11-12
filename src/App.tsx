@@ -21,7 +21,7 @@ import IntroSection from './components/IntroSection';
 import YehiRatzonCard from './components/YehiRatzonCard';
 import BottomIntroSection from './components/BottomIntroSection';
 import SequentialPlayToast from './components/SequentialPlayToast';
-import { loadReminders, saveReminders, checkAndTriggerReminders, subscribeUserToWebPush } from './lib/notifications';
+import { loadReminders, saveReminders, checkAndTriggerReminders, ensureWebPushSubscribed } from './lib/notifications';
 
 export default function App() {
   // --- Core States ---
@@ -292,13 +292,23 @@ export default function App() {
     }
   }, [settings, currentUser]);
 
+  const lastSyncedPushJsonRef = useRef<string>('');
+
   useEffect(() => {
     saveReminders(reminders);
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      subscribeUserToWebPush(reminders).catch(() => {});
-    }
     if (currentUser?.uid) {
       syncUserRemindersToFirestore(currentUser.uid, reminders);
+    }
+
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      const serialized = JSON.stringify(reminders);
+      if (serialized !== lastSyncedPushJsonRef.current) {
+        const timer = setTimeout(() => {
+          lastSyncedPushJsonRef.current = serialized;
+          ensureWebPushSubscribed(reminders).catch(() => {});
+        }, 400);
+        return () => clearTimeout(timer);
+      }
     }
   }, [reminders, currentUser]);
 
@@ -816,10 +826,6 @@ export default function App() {
         reminders={reminders}
         onSaveReminders={(newReminders, toastMessage) => {
           setReminders(newReminders);
-          saveReminders(newReminders);
-          if (currentUser?.uid) {
-            syncUserRemindersToFirestore(currentUser.uid, newReminders);
-          }
           if (toastMessage) {
             showNotification(toastMessage);
           }

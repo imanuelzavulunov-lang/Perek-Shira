@@ -20,7 +20,9 @@ import {
   requestDeviceNotificationPermission,
   clearReminderFiredToday,
   normalizeTimeStr,
-  subscribeUserToWebPush,
+  ensureWebPushSubscribed,
+  getPushFailureHebrewMessage,
+  isIOSNeedingHomeScreenInstall,
 } from '../lib/notifications';
 
 interface ReminderModalProps {
@@ -99,48 +101,64 @@ export default function ReminderModal({
     setFeedbackMsg({ text, type });
   };
 
-  const handleRequestPermission = async () => {
-    if (permission === 'denied') {
-      showToast('ההתראות חסומות בדפדפן. לחצו על סמל המנעול ליד שורת הכתובת > הרשאות > אפשר התראות.', 'error');
-      return;
+  const handleRequestPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
+    const currentPerm = getNotificationPermission();
+    setPermission(currentPerm);
+
+    if (currentPerm === 'denied') {
+      showToast(getPushFailureHebrewMessage('permission_denied'), 'error');
+      return 'denied';
+    }
+
+    if (currentPerm === 'granted') {
+      return 'granted';
     }
 
     try {
       const res = await requestDeviceNotificationPermission();
       setPermission(res);
-      if (res === 'granted') {
-        showToast('גישה להתראות אושרה בהצלחה! התזכורות יקפצו במכשירך כעת.');
-        subscribeUserToWebPush(reminders).catch(() => {});
-      } else if (res === 'denied') {
-        showToast('ההרשאה נדחתה. יש לאפשר התראות בהגדרות הדפדפן.', 'error');
+      if (res === 'denied') {
+        showToast(getPushFailureHebrewMessage('permission_denied'), 'error');
       }
+      return res;
     } catch (err) {
       console.error('Permission error:', err);
       showToast('לא ניתן היה לבקש הרשאת התראות במכשיר זה.', 'error');
+      return getNotificationPermission();
     }
   };
 
-
-
   // Toggle Reminder Active/Inactive
-  const handleToggleEnable = (id: string) => {
+  const handleToggleEnable = async (id: string) => {
     const target = reminders.find((r) => r.id === id);
     if (!target) return;
 
-    if (!target.enabled) {
+    const enabling = !target.enabled;
+    if (enabling) {
       clearReminderFiredToday(id);
-      if (permission !== 'granted') {
-        handleRequestPermission();
+      if (getNotificationPermission() === 'default') {
+        await handleRequestPermission();
       }
     }
 
     const updated = reminders.map((r) =>
-      r.id === id ? { ...r, enabled: !r.enabled } : r
+      r.id === id ? { ...r, enabled: enabling } : r
     );
     onSaveReminders(updated);
-    subscribeUserToWebPush(updated).catch(() => {});
-    const newState = !target.enabled;
-    showToast(newState ? `תזכורת "${target.label}" הופעלה` : `תזכורת "${target.label}" כובתה`);
+
+    if (enabling) {
+      const pushRes = await ensureWebPushSubscribed(updated);
+      if (pushRes.ok) {
+        showToast(`תזכורת "${target.label}" הופעלה (תישלח גם כשהאפליקציה סגורה)`);
+      } else {
+        showToast(getPushFailureHebrewMessage(pushRes.reason), 'error');
+      }
+    } else {
+      if (getNotificationPermission() === 'granted') {
+        ensureWebPushSubscribed(updated).catch(() => {});
+      }
+      showToast(`תזכורת "${target.label}" כובתה`);
+    }
   };
 
   // Open Form to Add New Reminder
@@ -167,8 +185,10 @@ export default function ReminderModal({
   const handleDeleteReminder = (id: string) => {
     setSwipedReminderId(null);
     const updated = reminders.filter((r) => r.id !== id);
-    onSaveReminders(updated, 'התזכורת נמחקה בהצלחה');
-    subscribeUserToWebPush(updated).catch(() => {});
+    onSaveReminders(updated);
+    if (getNotificationPermission() === 'granted') {
+      ensureWebPushSubscribed(updated).catch(() => {});
+    }
     showToast('התזכורת נמחקה בהצלחה');
   };
 
@@ -179,12 +199,8 @@ export default function ReminderModal({
     );
   };
 
-  // Save Add/Edit with DUPLICATE CHECK
+  // Save Add/Edit with DUPLICATE CHECK & reliable Web Push registration
   const handleSaveForm = async () => {
-    if (permission !== 'granted') {
-      await handleRequestPermission();
-    }
-
     if (!formTime) {
       showToast('אנא בחרו שעת תזכורת', 'error');
       return;
@@ -211,9 +227,16 @@ export default function ReminderModal({
       return;
     }
 
-    if (viewMode === 'edit' && editingId) {
+    if (!isIOSNeedingHomeScreenInstall() && getNotificationPermission() === 'default') {
+      await handleRequestPermission();
+    }
+
+    const isEditing = viewMode === 'edit' && editingId;
+    let updated: ReminderItem[];
+
+    if (isEditing && editingId) {
       clearReminderFiredToday(editingId);
-      const updated = reminders.map((r) =>
+      updated = reminders.map((r) =>
         r.id === editingId
           ? {
               ...r,
@@ -224,11 +247,7 @@ export default function ReminderModal({
             }
           : r
       );
-      onSaveReminders(updated, 'התזכורת עודכנה בהצלחה! 🔔');
-      subscribeUserToWebPush(updated).catch(() => {});
-      setViewMode('list');
       setEditingId(null);
-      showToast('התזכורת עודכנה בהצלחה! 🔔');
     } else {
       const newId = `reminder-${Date.now()}`;
       clearReminderFiredToday(newId);
@@ -240,11 +259,21 @@ export default function ReminderModal({
         enabled: true,
         createdAt: Date.now(),
       };
-      const updated = [...reminders, newReminder];
-      onSaveReminders(updated, 'התזכורת נוספה בהצלחה! 🔔');
-      subscribeUserToWebPush(updated).catch(() => {});
-      setViewMode('list');
-      showToast('התזכורת נוספה בהצלחה! 🔔');
+      updated = [...reminders, newReminder];
+    }
+
+    onSaveReminders(updated);
+    setViewMode('list');
+
+    const pushRes = await ensureWebPushSubscribed(updated);
+    if (pushRes.ok) {
+      showToast(
+        isEditing
+          ? 'התזכורת עודכנה בהצלחה! התראה תישלח גם כשהאפליקציה סגורה 🔔'
+          : 'התזכורת נוספה בהצלחה! התראה תישלח גם כשהאפליקציה סגורה 🔔'
+      );
+    } else {
+      showToast(getPushFailureHebrewMessage(pushRes.reason), 'error');
     }
   };
 

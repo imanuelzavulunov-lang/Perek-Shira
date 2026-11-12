@@ -1,10 +1,55 @@
 import { ReminderItem } from '../types';
 import { safeStorage } from './storage';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from './firebase';
 
 const REMINDERS_STORAGE_KEY = 'perek-shira-reminders';
 const OLD_REMINDER_STORAGE_KEY = 'perek-shira-reminder';
+
+export type PushFailureReason =
+  | 'ios_install_required'
+  | 'unsupported'
+  | 'permission_denied'
+  | 'permission_dismissed'
+  | 'iframe_blocked'
+  | 'sw_unavailable'
+  | 'server_error';
+
+export interface PushSubscriptionResult {
+  ok: boolean;
+  reason?: PushFailureReason;
+  detail?: string;
+}
+
+export const isIOSDevice = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return (
+    /iphone|ipad|ipod/i.test(ua) ||
+    (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1)
+  );
+};
+
+export const isStandaloneMode = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia?.('(display-mode: standalone)')?.matches ||
+    (window.navigator as any)?.standalone === true
+  );
+};
+
+export const isRunningInIframe = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+};
+
+export const isIOSNeedingHomeScreenInstall = (): boolean => {
+  if (!isIOSDevice()) return false;
+  if (isStandaloneMode()) return false;
+  return !('PushManager' in window && 'Notification' in window);
+};
 
 export const isNotificationSupported = (): boolean => {
   return typeof window !== 'undefined' && 'Notification' in window;
@@ -23,6 +68,26 @@ export const requestDeviceNotificationPermission = async (): Promise<Notificatio
   } catch (err) {
     console.warn('Error requesting notification permission:', err);
     return Notification.permission;
+  }
+};
+
+export const getPushFailureHebrewMessage = (reason?: PushFailureReason): string => {
+  switch (reason) {
+    case 'ios_install_required':
+      return 'באייפון/אייפד יש להוסיף קודם את האפליקציה למסך הבית (כפתור שיתוף > הוספה למסך הבית) כדי לקבל התראות כשהאפליקציה סגורה.';
+    case 'permission_denied':
+      return 'ההתראות חסומות בדפדפן. לחצו על סמל המנעול ליד שורת הכתובת > הרשאות > אפשר התראות.';
+    case 'permission_dismissed':
+      return 'יש לאשר גישה להתראות כדי שהתזכורת תקפוץ גם כשהאפליקציה סגורה.';
+    case 'iframe_blocked':
+      return 'בחלון תצוגה מקדימה הדפדפן חוסם רישום התראות רקע. פתחו את האפליקציה בלשונית נפרדת להפעלת התראות.';
+    case 'unsupported':
+      return 'דפדפן זה אינו תומך בהתראות רקע (Web Push). נסו להשתמש ב-Chrome, Edge, Firefox או להוסיף למסך הבית.';
+    case 'sw_unavailable':
+      return 'שירות ההתראות עדיין נטען. נסו לרענן את העמוד ולשמור שוב.';
+    case 'server_error':
+    default:
+      return 'לא ניתן היה לרשום את המכשיר לקבלת התראות ברקע כרגע. בדקו את החיבור ונסו שוב.';
   }
 };
 
@@ -61,13 +126,6 @@ export const clearReminderFiredToday = (reminderId: string): void => {
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     safeStorage.removeItem(`perek-shira-fired-${reminderId}-${todayStr}`);
-    // Also clean up any legacy minute-keyed records
-    for (let h = 0; h < 24; h++) {
-      for (let m = 0; m < 60; m += 1) {
-        const t = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-        safeStorage.removeItem(`perek-shira-fired-${reminderId}-${todayStr}-${t}`);
-      }
-    }
   } catch (err) {
     console.warn('Error clearing fired reminder state:', err);
   }
@@ -75,14 +133,12 @@ export const clearReminderFiredToday = (reminderId: string): void => {
 
 /**
  * Sends a system notification to the device tray and notification heads-up banner
- * User requirement: "ללא צליל רק התראת מערכת רגילה"
  */
 export const sendDeviceNotification = async (
   title: string = 'קריאת פרק שירה 📖',
   body: string = 'הגיע הזמן לקריאת פרק שירה היומי שלכם! לחצו לפתיחה.',
   tag?: string
 ): Promise<boolean> => {
-  // Gentle tactile vibration feedback on supported devices (Android, etc.)
   if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
     try {
       navigator.vibrate([250, 100, 250]);
@@ -95,7 +151,9 @@ export const sendDeviceNotification = async (
     return false;
   }
 
-  const notificationTag = tag || 'perek-shira-reminder';
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const notificationTag = tag || `perek-shira-reminder-${todayStr}`;
 
   const options: NotificationOptions & { renotify?: boolean } = {
     body,
@@ -104,39 +162,19 @@ export const sendDeviceNotification = async (
     dir: 'rtl',
     lang: 'he',
     tag: notificationTag,
-    renotify: true, // Forces the system to re-alert the user even if a previous notification is present
+    renotify: true,
+    silent: false,
     requireInteraction: false,
   };
 
-  // 1. Try Service Worker showNotification (Mandatory for Android Chrome & Progressive Web Apps)
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     try {
-      let reg: ServiceWorkerRegistration | null = null;
-
-      // Prefer navigator.serviceWorker.ready for fully active registration
-      try {
-        const readyPromise = navigator.serviceWorker.ready;
-        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
-        reg = await Promise.race([readyPromise, timeoutPromise]);
-      } catch {
-        // fallback to standard getRegistration
-      }
-
-      if (!reg) {
-        reg = (await navigator.serviceWorker.getRegistration()) || null;
-      }
-
-      if (!reg) {
-        reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-      }
-
+      const reg = await getActiveServiceWorkerRegistration();
       if (reg) {
         if (typeof reg.showNotification === 'function') {
           await reg.showNotification(title, options);
           return true;
         }
-
-        // PostMessage fallback to active worker
         if (reg.active && typeof reg.active.postMessage === 'function') {
           reg.active.postMessage({
             type: 'SHOW_NOTIFICATION',
@@ -151,7 +189,6 @@ export const sendDeviceNotification = async (
     }
   }
 
-  // 2. Fallback to standard window Notification (Desktop Chrome, Safari, Firefox)
   try {
     const notif = new Notification(title, options);
     notif.onclick = () => {
@@ -168,7 +205,6 @@ export const sendDeviceNotification = async (
 /**
  * Loads the list of reminders from safeStorage.
  * Handles automatic migration from previous single-reminder format.
- * Default for new users is NO reminders defined ([]).
  */
 export const loadReminders = (): ReminderItem[] => {
   try {
@@ -176,11 +212,10 @@ export const loadReminders = (): ReminderItem[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        // Filter out unused placeholder if user hasn't actively configured it
         const cleaned = parsed.filter(
           (item) => !(item.id === 'default-shira' && item.enabled === false && parsed.length === 1)
         );
-        const result = cleaned.map((item) => ({
+        return cleaned.map((item) => ({
           id: String(item.id || `reminder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
           label: String(item.label || 'קריאת פרק שירה').trim(),
           time: normalizeTimeStr(String(item.time || '08:00')),
@@ -188,12 +223,9 @@ export const loadReminders = (): ReminderItem[] => {
           enabled: Boolean(item.enabled),
           createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
         }));
-        syncRemindersToServiceWorker(result).catch(() => {});
-        return result;
       }
     }
 
-    // Check old single reminder for automatic seamless migration
     const oldRaw = safeStorage.getItem(OLD_REMINDER_STORAGE_KEY);
     if (oldRaw) {
       const oldParsed = JSON.parse(oldRaw);
@@ -214,33 +246,32 @@ export const loadReminders = (): ReminderItem[] => {
     console.warn('Error loading reminders:', e);
   }
 
-  // Default for new users: empty array (no reminders defined yet)
   return [];
 };
 
-/**
- * Persists reminders array into safeStorage
- */
 const DB_NAME = 'perek_shira_data';
 const DB_STORE = 'reminders_store';
 
-const saveRemindersToIDB = (reminders: ReminderItem[]): Promise<boolean> => {
+const saveRemindersToIDB = (reminders: ReminderItem[], timezone?: string): Promise<boolean> => {
   return new Promise((resolve) => {
     if (typeof indexedDB === 'undefined') return resolve(false);
     try {
       const request = indexedDB.open(DB_NAME, 1);
       request.onupgradeneeded = (e: any) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains(DB_STORE)) {
-          db.createObjectStore(DB_STORE);
+        const idb = e.target.result;
+        if (!idb.objectStoreNames.contains(DB_STORE)) {
+          idb.createObjectStore(DB_STORE);
         }
       };
       request.onsuccess = (e: any) => {
-        const db = e.target.result;
+        const idb = e.target.result;
         try {
-          const tx = db.transaction(DB_STORE, 'readwrite');
+          const tx = idb.transaction(DB_STORE, 'readwrite');
           const store = tx.objectStore(DB_STORE);
           store.put(reminders, 'active_reminders');
+          if (timezone) {
+            store.put(timezone, 'user_timezone');
+          }
           tx.oncomplete = () => resolve(true);
           tx.onerror = () => resolve(false);
         } catch {
@@ -256,7 +287,7 @@ const saveRemindersToIDB = (reminders: ReminderItem[]): Promise<boolean> => {
 
 function urlB64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; ++i) {
@@ -265,24 +296,65 @@ function urlB64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+function waitForWorkerActivation(reg: ServiceWorkerRegistration, timeoutMs = 8000): Promise<ServiceWorkerRegistration | null> {
+  if (reg.active) return Promise.resolve(reg);
+
+  const worker = reg.installing || reg.waiting;
+  if (!worker) {
+    return Promise.race([
+      navigator.serviceWorker.ready.then((r) => (r.active ? r : null)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: ServiceWorkerRegistration | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      finish(reg.active ? reg : null);
+    }, timeoutMs);
+
+    const onStateChange = () => {
+      if (worker.state === 'activated' || reg.active) {
+        worker.removeEventListener('statechange', onStateChange);
+        finish(reg);
+      } else if (worker.state === 'redundant') {
+        worker.removeEventListener('statechange', onStateChange);
+        navigator.serviceWorker.ready.then((r) => finish(r.active ? r : null)).catch(() => finish(null));
+      }
+    };
+
+    worker.addEventListener('statechange', onStateChange);
+  });
+}
+
 /**
- * Helper to reliably obtain an active ServiceWorkerRegistration without hanging indefinitely
+ * Obtains a fully ACTIVATED ServiceWorkerRegistration, waiting for installation/activation if needed.
  */
 export const getActiveServiceWorkerRegistration = async (): Promise<ServiceWorkerRegistration | null> => {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
 
   try {
-    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1800));
-    const reg = await Promise.race([navigator.serviceWorker.ready, timeoutPromise]);
-    if (reg) return reg;
-  } catch {
-    // continue to fallback
-  }
+    let reg = (await navigator.serviceWorker.getRegistration('/')) || (await navigator.serviceWorker.getRegistration());
+    if (!reg) {
+      reg = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
+    }
+    if (reg.active) return reg;
 
-  try {
-    const existing = await navigator.serviceWorker.getRegistration();
-    if (existing) return existing;
-    return await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    const activated = await waitForWorkerActivation(reg, 8000);
+    if (activated?.active) return activated;
+
+    const readyReg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+    ]);
+    return readyReg?.active ? readyReg : null;
   } catch (err) {
     console.warn('Failed to get active Service Worker registration:', err);
     return null;
@@ -290,35 +362,48 @@ export const getActiveServiceWorkerRegistration = async (): Promise<ServiceWorke
 };
 
 /**
- * Subscribes user to Server-Side Web Push so notifications can pop up
- * even when the website is closed or phone screen is off/locked!
+ * Subscribes the user's device to Server-Side Web Push and persists subscription + schedule
+ * to the backend (and Firestore via server) with structured diagnostics on failure.
  */
-export const subscribeUserToWebPush = async (reminders: ReminderItem[]): Promise<boolean> => {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-    return false;
+export const ensureWebPushSubscribed = async (reminders: ReminderItem[]): Promise<PushSubscriptionResult> => {
+  if (typeof window === 'undefined') {
+    return { ok: false, reason: 'unsupported' };
+  }
+
+  if (isIOSNeedingHomeScreenInstall()) {
+    return { ok: false, reason: 'ios_install_required' };
+  }
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    return { ok: false, reason: isRunningInIframe() ? 'iframe_blocked' : 'unsupported' };
+  }
+
+  if (Notification.permission === 'denied') {
+    return { ok: false, reason: 'permission_denied' };
+  }
+  if (Notification.permission !== 'granted') {
+    return { ok: false, reason: 'permission_dismissed' };
   }
 
   try {
-    if (Notification.permission !== 'granted') {
-      return false;
+    const reg = await getActiveServiceWorkerRegistration();
+    if (!reg || !reg.active) {
+      return { ok: false, reason: 'sw_unavailable' };
     }
 
-    const reg = await getActiveServiceWorkerRegistration();
-    if (!reg) return false;
-
-    // 1. Fetch VAPID public key from backend
     const keyRes = await fetch('/api/vapid-public-key');
-    if (!keyRes.ok) return false;
+    if (!keyRes.ok) {
+      return { ok: false, reason: 'server_error', detail: `VAPID fetch failed (${keyRes.status})` };
+    }
     const { publicKey } = await keyRes.json();
-    if (!publicKey) return false;
+    if (!publicKey) {
+      return { ok: false, reason: 'server_error', detail: 'Empty VAPID key' };
+    }
 
     const convertedVapidKey = urlB64ToUint8Array(publicKey);
 
-    // 2. Get or create PushSubscription (verify key consistency)
     let subscription = await reg.pushManager.getSubscription();
-
     if (subscription && subscription.options?.applicationServerKey) {
-      // Check if existing subscription used a different VAPID key
       try {
         const existingBytes = new Uint8Array(subscription.options.applicationServerKey);
         let keyMatches = existingBytes.length === convertedVapidKey.length;
@@ -335,73 +420,79 @@ export const subscribeUserToWebPush = async (reminders: ReminderItem[]): Promise
           subscription = null;
         }
       } catch {
-        // If checking fails, continue with existing or fallback
+        // ignore mismatch check errors
       }
     }
 
     if (!subscription) {
-      subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedVapidKey,
-      });
-    }
-
-    if (!subscription) return false;
-
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem';
-
-    // 3. Send subscription + reminders + timezone to server
-    await fetch('/api/save-subscription', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        subscription,
-        reminders,
-        timezone: tz,
-      }),
-    }).catch(() => {});
-
-    // 4. Save directly to Firestore for maximum persistence across all restarts
-    if (db && subscription.endpoint) {
       try {
-        const safeId = btoa(subscription.endpoint).replace(/[^a-zA-Z0-9_-]/g, '').slice(-32);
-        const subDocRef = doc(db, 'push_subscriptions', safeId);
-        setDoc(subDocRef, {
-          id: safeId,
-          subscription: JSON.parse(JSON.stringify(subscription)),
-          reminders,
-          timezone: tz,
-          updatedAt: Date.now(),
-        }, { merge: true }).catch(() => {});
-      } catch (fsErr) {
-        // ignore
+        subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey,
+        });
+      } catch (subErr: any) {
+        const msg = String(subErr?.message || subErr);
+        console.warn('pushManager.subscribe failed:', msg);
+        if (isRunningInIframe()) {
+          return { ok: false, reason: 'iframe_blocked', detail: msg };
+        }
+        return { ok: false, reason: 'unsupported', detail: msg };
       }
     }
 
-    return true;
-  } catch (err) {
+    if (!subscription) {
+      return { ok: false, reason: 'unsupported' };
+    }
+
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem';
+    saveRemindersToIDB(reminders, tz).catch(() => {});
+
+    let savedOk = false;
+    for (let attempt = 0; attempt < 2 && !savedOk; attempt++) {
+      try {
+        const saveRes = await fetch('/api/save-subscription', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscription,
+            reminders,
+            timezone: tz,
+          }),
+        });
+        if (saveRes.ok) {
+          savedOk = true;
+        }
+      } catch {
+        // retry on second attempt
+      }
+    }
+
+    if (!savedOk) {
+      return { ok: false, reason: 'server_error' };
+    }
+
+    return { ok: true };
+  } catch (err: any) {
     console.warn('Web push subscription error:', err);
-    return false;
+    return { ok: false, reason: 'server_error', detail: String(err?.message || err) };
   }
+};
+
+export const subscribeUserToWebPush = async (reminders: ReminderItem[]): Promise<boolean> => {
+  const res = await ensureWebPushSubscribed(reminders);
+  return res.ok;
 };
 
 /**
  * Sends a real test Web Push message via server-side push service.
- * This triggers the OS push pipeline to wake sleeping/locked phone screens!
  */
 export const sendTestWebPushNotification = async (reminders: ReminderItem[]): Promise<boolean> => {
   try {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-      return false;
-    }
-    const reg = await getActiveServiceWorkerRegistration();
-    if (!reg) return false;
+    const ensure = await ensureWebPushSubscribed(reminders);
+    if (!ensure.ok) return false;
 
-    let subscription = await reg.pushManager.getSubscription();
-    if (!subscription) {
-      await subscribeUserToWebPush(reminders);
-      subscription = await reg.pushManager.getSubscription();
-    }
+    const reg = await getActiveServiceWorkerRegistration();
+    const subscription = await reg?.pushManager.getSubscription();
     if (!subscription) return false;
 
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem';
@@ -418,18 +509,14 @@ export const sendTestWebPushNotification = async (reminders: ReminderItem[]): Pr
 };
 
 /**
- * Synchronizes reminders to the Service Worker and registers OS-level triggers
- * so alarms fire even if the browser is closed or phone is locked/off.
+ * Synchronizes reminders to IndexedDB and the Service Worker for offline/background resilience.
+ * Does NOT duplicate network calls to /api/save-subscription (handled explicitly by ensureWebPushSubscribed).
  */
 export const syncRemindersToServiceWorker = async (reminders: ReminderItem[]): Promise<void> => {
   try {
-    // 1. Save to shared IndexedDB so SW can read anytime
-    saveRemindersToIDB(reminders).catch(() => {});
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem';
+    await saveRemindersToIDB(reminders, tz);
 
-    // 2. Synchronize with Server-side Web Push for closed-browser / locked-phone alerts
-    subscribeUserToWebPush(reminders).catch(() => {});
-
-    // 3. Post to Service Worker to schedule triggers & alarms
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       const reg = await getActiveServiceWorkerRegistration();
       if (reg) {
@@ -437,17 +524,17 @@ export const syncRemindersToServiceWorker = async (reminders: ReminderItem[]): P
           reg.active.postMessage({
             type: 'SCHEDULE_REMINDERS',
             reminders,
+            timezone: tz,
           });
         }
 
-        // Register Periodic Background Sync if available
         if ('periodicSync' in reg && typeof (reg as any).periodicSync?.register === 'function') {
           try {
             await (reg as any).periodicSync.register('perek-shira-reminder-check', {
-              minInterval: 60 * 60 * 1000, // Every hour minimum
+              minInterval: 60 * 60 * 1000,
             });
           } catch {
-            // Periodic sync is optional/permission-dependent
+            // Optional permission-dependent API
           }
         }
       }
@@ -458,7 +545,7 @@ export const syncRemindersToServiceWorker = async (reminders: ReminderItem[]): P
 };
 
 /**
- * Persists reminders array into safeStorage and syncs to Service Worker
+ * Persists reminders array into safeStorage and syncs to IndexedDB + Service Worker
  */
 export const saveReminders = (reminders: ReminderItem[]): void => {
   safeStorage.setItem(REMINDERS_STORAGE_KEY, JSON.stringify(reminders));
@@ -466,9 +553,8 @@ export const saveReminders = (reminders: ReminderItem[]): void => {
 };
 
 /**
- * Checks all active reminders and triggers device notifications and/or in-app alerts
- * for any matching current time & day.
- * Includes catch-up grace window for sleeping devices or throttled background tabs.
+ * Checks all active reminders while app is open and triggers foreground device notifications
+ * sharing the exact daily tag used by the server push dispatcher.
  */
 export const checkAndTriggerReminders = (
   reminders: ReminderItem[],
@@ -477,7 +563,7 @@ export const checkAndTriggerReminders = (
   if (!Array.isArray(reminders) || reminders.length === 0) return [];
 
   const now = new Date();
-  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  const currentDay = now.getDay();
   const currentHours = now.getHours();
   const currentMinutes = now.getMinutes();
   const currentTotalMinutes = currentHours * 60 + currentMinutes;
@@ -488,29 +574,20 @@ export const checkAndTriggerReminders = (
   for (const reminder of reminders) {
     if (!reminder.enabled || !reminder.time) continue;
 
-    // 1. Day of week check
     const days = Array.isArray(reminder.days) ? reminder.days : [0, 1, 2, 3, 4, 5, 6];
     const isTodayActive = days.length === 0 || days.includes(currentDay);
     if (!isTodayActive) continue;
 
-    // 2. Parse reminder time
     const parsed = parseTimeString(reminder.time);
     if (!parsed) continue;
 
     const reminderTotalMinutes = parsed.hours * 60 + parsed.minutes;
-
-    // 3. Has this reminder already fired today?
     const fireKey = `perek-shira-fired-${reminder.id}-${todayStr}`;
     if (safeStorage.getItem(fireKey) === 'true') {
-      continue; // Already triggered today!
+      continue;
     }
 
-    // 4. Timing evaluation:
-    // Case A: Exact minute match (current minute equals reminder minute)
     const isExactMinute = currentTotalMinutes === reminderTotalMinutes;
-
-    // Case B: Grace catch-up window (within 15 minutes of scheduled time)
-    // Handles scenarios where phone screen was locked, tab throttled, or browser sleeping when reminder was due
     const minuteDiff = currentTotalMinutes - reminderTotalMinutes;
     const isCatchUpWindow = minuteDiff > 0 && minuteDiff <= 15;
 
@@ -526,22 +603,18 @@ export const checkAndTriggerReminders = (
         0
       ).getTime();
       const createdAt = reminder.createdAt || 0;
-      // Trigger catch-up only if reminder was created prior to the scheduled time today (plus 30s buffer)
       canTriggerCatchUp = createdAt < scheduledTimeToday + 30000;
     }
 
     if (isExactMinute || canTriggerCatchUp) {
-      // Mark as fired for today immediately
       safeStorage.setItem(fireKey, 'true');
 
-      // 1. Send device notification to notification bar/lock screen (without mentioning the scheduled time)
       sendDeviceNotification(
         reminder.label?.trim() || 'קריאת פרק שירה 📖',
         'הגיע הזמן לקריאת פרק שירה היומי! לחצו לפתיחה.',
-        `perek-shira-reminder-${reminder.id}`
+        `perek-shira-reminder-${reminder.id}-${todayStr}`
       );
 
-      // 2. In-app pop-up alert (guarantees alert even if system notification was denied/blocked)
       if (typeof onTriggered === 'function') {
         onTriggered(reminder);
       }

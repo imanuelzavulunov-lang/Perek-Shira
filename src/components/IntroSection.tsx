@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppSettings } from '../types';
 
@@ -62,7 +62,6 @@ export default function IntroSection({ settings }: IntroSectionProps) {
         >
           <div className="flex items-center gap-2">
             <span className="text-[15.2px] md:text-[17.1px] font-bold text-primary-accent bg-primary-accent/10 px-3.5 py-2 rounded-full inline-flex items-center gap-2 transition-all group-hover:bg-primary-accent/15 whitespace-nowrap">
-              <Sparkles className="w-4 h-4 shrink-0" />
               <span>הקדמה לפרק שירה</span>
             </span>
           </div>

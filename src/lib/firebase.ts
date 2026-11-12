@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeAuth, getAuth, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence } from 'firebase/auth';
-import { getFirestore, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, memoryLocalCache, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 let appInstance: any = null;
@@ -48,4 +48,17 @@ if (app) {
 
 export const db = firestoreDb;
 
+async function testConnection() {
+  if (!db) return;
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
+  }
+}
 
+if (typeof window !== 'undefined') {
+  testConnection();
+}

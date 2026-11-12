@@ -1,26 +1,113 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidUserProfile(data) {
+      return data is map
+        && data.keys().hasOnly(['settings', 'reminder', 'reminders', 'lastReadDate', 'readCount', 'lastUpdated'])
+        && (!('settings' in data) || data.settings is map)
+        && (!('reminder' in data) || data.reminder is map)
+        && (!('reminders' in data) || (data.reminders is list && data.reminders.size() <= 50))
+        && (!('lastReadDate' in data) || (data.lastReadDate is string && data.lastReadDate.size() <= 64))
+        && (!('readCount' in data) || data.readCount is number)
+        && (!('lastUpdated' in data) || (data.lastUpdated is string && data.lastUpdated.size() <= 64));
+    }
+
+    function isValidPublicDedication(data) {
+      return data is map
+        && data.keys().hasAll(['userId', 'name'])
+        && data.keys().hasOnly(['userId', 'name', 'purpose', 'createdAt'])
+        && isValidId(data.userId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && (!('purpose' in data) || (data.purpose is string && data.purpose.size() <= 300))
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    function isValidPushSubscription(data, subscriptionId) {
+      return data is map
+        && data.keys().hasAll(['id', 'subscription', 'reminders', 'timezone', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'subscription', 'reminders', 'timezone', 'lastTriggered', 'updatedAt'])
+        && data.id == subscriptionId
+        && isValidId(data.id)
+        && data.subscription is map
+        && data.subscription.keys().hasAll(['endpoint'])
+        && data.subscription.keys().hasOnly(['endpoint', 'expirationTime', 'keys'])
+        && data.subscription.endpoint is string
+        && data.subscription.endpoint.size() >= 10
+        && data.subscription.endpoint.size() <= 1024
+        && data.reminders is list
+        && data.reminders.size() <= 50
+        && data.timezone is string
+        && data.timezone.size() >= 1
+        && data.timezone.size() <= 64
+        && data.updatedAt is number
+        && (!('lastTriggered' in data) || data.lastTriggered is map);
+    }
+
     // User profile and personal data only accessible by the owner
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      
-      match /{allSubcollections=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow create, update: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming());
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /data/{docId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(docId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(docId) && isValidUserProfile(incoming());
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(docId) && isValidUserProfile(incoming());
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(docId);
       }
     }
 
-    // Public prayer dedications or communal readings if any
+    // Public prayer dedications or communal readings
     match /public_dedications/{dedicationId} {
-      allow read: if true;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow get, list: if true;
+      allow create: if isSignedIn()
+        && isValidId(dedicationId)
+        && isValidPublicDedication(incoming())
+        && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn()
+        && isValidId(dedicationId)
+        && isValidPublicDedication(incoming())
+        && existing().userId == request.auth.uid
+        && incoming().userId == existing().userId
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'purpose']);
+      allow delete: if isSignedIn() && isValidId(dedicationId) && existing().userId == request.auth.uid;
     }
 
-    // Push subscriptions collection for background notification scheduling
+    // Push subscriptions collection for server-side background notification scheduling
     match /push_subscriptions/{subscriptionId} {
-      allow read, write: if true;
+      allow get: if isValidId(subscriptionId);
+      allow list: if true;
+      allow create: if isValidId(subscriptionId) && isValidPushSubscription(incoming(), subscriptionId);
+      allow update: if isValidId(subscriptionId)
+        && isValidPushSubscription(incoming(), subscriptionId)
+        && incoming().id == existing().id
+        && incoming().diff(existing()).affectedKeys().hasOnly(['subscription', 'reminders', 'timezone', 'lastTriggered', 'updatedAt']);
+      allow delete: if isValidId(subscriptionId);
     }
   }
 }

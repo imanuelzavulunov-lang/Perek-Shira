@@ -1,0 +1,42 @@
+[
+  {
+    "id": "DTG1rbmRMNUxuckIwc1d1NkJEaDUxQlA",
+    "subscription": {
+      "endpoint": "https://fcm.googleapis.com/fcm/send/fbOXqfQc3I0:APA91bEqNjwp0qW2SMJdW04PjPEuCZ1i72IDZN_d-npljbVOnLXqCj9tJ87LTASHDU4R_EHKXdkg77Onq6La59_h7g2aRTMlT4ylsdaeiRaBA687LKPTCLmkndL5LnrB0sWu6BDh51BP",
+      "expirationTime": null,
+      "keys": {
+        "p256dh": "BExAz27JbHvK8aYHikd9QymsfCEs0Qf4P2KfRt70sSehUFKHsuRH3FqwWvEVgFSOd9U5YTywxj-Te0yJP1gDDvo",
+        "auth": "HAo3kPhnQ-XSqqhQP6JMgw"
+      }
+    },
+    "reminders": [
+      {
+        "id": "reminder-1793168670218",
+        "time": "08:10",
+        "days": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "enabled": true,
+        "label": "קריאת פרק שירה",
+        "createdAt": 1793168670221
+      },
+      {
+        "days": [
+          5
+        ],
+        "id": "reminder-1793168681478",
+        "enabled": true,
+        "createdAt": 1793168681482,
+        "time": "09:00",
+        "label": "קריאת פרק שירה"
+      }
+    ],
+    "timezone": "Asia/Jerusalem",
+    "lastTriggered": {},
+    "updatedAt": 1794520339925
+  }
+]
