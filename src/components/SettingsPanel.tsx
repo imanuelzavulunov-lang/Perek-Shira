@@ -1,5 +1,5 @@
-import React from 'react';
-import { Type, ALargeSmall, Eye, Image, ChevronDown, RotateCcw, Download } from 'lucide-react';
+import { useState } from 'react';
+import { Type, ALargeSmall, Eye, Image, ChevronDown, RotateCcw, Share2, Copy, Check } from 'lucide-react';
 import { AppSettings, DEFAULT_SETTINGS } from '../types';
 
 interface SettingsPanelProps {
@@ -7,6 +7,7 @@ interface SettingsPanelProps {
   onChange: (settings: AppSettings) => void;
   onCloseSettings?: () => void;
   onOpenDownloadImages?: () => void;
+  onShowNotification?: (msg: string) => void;
 }
 
 export default function SettingsPanel({
@@ -14,7 +15,9 @@ export default function SettingsPanel({
   onChange,
   onCloseSettings,
   onOpenDownloadImages,
+  onShowNotification,
 }: SettingsPanelProps) {
+  const [copied, setCopied] = useState(false);
   const headerClass = 'flex items-center gap-1.5 font-bold text-text-primary text-sm sm:text-base';
 
   const triggerAutoClose = () => {
@@ -22,6 +25,81 @@ export default function SettingsPanel({
       setTimeout(() => {
         onCloseSettings();
       }, 220);
+    }
+  };
+
+  const SHARE_URL = 'https://perek-shira.ai.studio/';
+  const SHARE_TEXT = 'אפליקציית פרק שירה המלא - שירת הבריאה מנוקד ומבואר, עם הקראה קולית ותזכורות:';
+
+  const handleShare = async () => {
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      let sharedWithFile = false;
+
+      // Attach app logo image file when supported (Web Share API Level 2) so the share sheet shows the logo
+      try {
+        const res = await fetch('/app-logo.png');
+        if (res.ok) {
+          const blob = await res.blob();
+          const logoFile = new File([blob], 'perek-shira-logo.png', {
+            type: blob.type || 'image/png',
+          });
+
+          const shareDataWithUrl: ShareData = {
+            title: 'פרק שירה - שירת הבריאה',
+            text: `${SHARE_TEXT}\n${SHARE_URL}`,
+            url: SHARE_URL,
+            files: [logoFile],
+          };
+
+          const shareDataWithTextOnly: ShareData = {
+            title: 'פרק שירה - שירת הבריאה',
+            text: `${SHARE_TEXT}\n${SHARE_URL}`,
+            files: [logoFile],
+          };
+
+          if (typeof navigator.canShare === 'function' && navigator.canShare(shareDataWithUrl)) {
+            await navigator.share(shareDataWithUrl);
+            sharedWithFile = true;
+          } else if (typeof navigator.canShare === 'function' && navigator.canShare(shareDataWithTextOnly)) {
+            await navigator.share(shareDataWithTextOnly);
+            sharedWithFile = true;
+          }
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        // Fall back to link-only Web Share below
+      }
+
+      if (sharedWithFile) {
+        if (onShowNotification) onShowNotification('האפליקציה שותפה בהצלחה! ✨');
+        return;
+      }
+
+      try {
+        await navigator.share({
+          title: 'פרק שירה - שירת הבריאה',
+          text: SHARE_TEXT,
+          url: SHARE_URL,
+        });
+        if (onShowNotification) onShowNotification('האפליקציה שותפה בהצלחה! ✨');
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          handleCopyLink();
+        }
+      }
+    } else {
+      handleCopyLink();
+    }
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${SHARE_TEXT}\n${SHARE_URL}`);
+      setCopied(true);
+      if (onShowNotification) onShowNotification('קישור לאפליקציה הועתק ללוח! 📋');
+      setTimeout(() => setCopied(false), 2200);
+    } catch {
+      // fallback
     }
   };
 
@@ -162,7 +240,7 @@ export default function SettingsPanel({
       </div>
 
       {/* Reset to Default Settings Button */}
-      <div className="pt-1">
+      <div className="pt-1 pb-4 border-b border-border-color/60">
         <button
           id="btn-reset-default-settings"
           onClick={() => {
@@ -175,28 +253,57 @@ export default function SettingsPanel({
         </button>
       </div>
 
-      {/* Action Buttons Section with Divider */}
-      <div className="pt-1 flex flex-col gap-2.5">
-        <hr className="border-0 border-t border-border-color/60 m-0" />
+      {/* Share App Card with App Logo */}
+      <div id="share-app-card" className="p-3.5 rounded-2xl border border-border-color bg-bg-muted/40 shadow-xs flex flex-col gap-3 text-[#555555]">
+        <div className="flex items-center gap-3">
+          <img
+            src="/app-logo.png"
+            alt="לוגו פרק שירה"
+            className="w-12 h-12 rounded-xl object-contain shadow-xs border border-border-color/60 shrink-0 select-none bg-bg-card"
+          />
+          <div className="flex flex-col min-w-0">
+            <span className="font-frank font-extrabold text-[15px] sm:text-base text-text-primary leading-tight">
+              פרק שירה - שירת הבריאה
+            </span>
+            <span className="text-xs text-text-secondary leading-snug mt-0.5">
+              שתפו את האפליקציה וזכו במצוות הפצת שירת הבריאה
+            </span>
+          </div>
+        </div>
 
-
-
-        {onOpenDownloadImages && (
+        <div className="grid grid-cols-2 gap-2 pt-0.5">
           <button
-            id="btn-download-all-images-settings"
-            onClick={() => {
-              onOpenDownloadImages();
-              if (onCloseSettings) onCloseSettings();
-            }}
-            className="w-full py-2.5 px-4 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 hover:text-amber-400 text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-3xs active:scale-98"
-            title="הורדת כל 92 התמונות של פרק שירה באיכות מקסימלית בקובץ ZIP"
+            id="btn-share-app"
+            onClick={handleShare}
+            className="py-2 px-3 rounded-xl bg-primary-accent text-white hover:opacity-95 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all shadow-3xs cursor-pointer active:scale-98"
           >
-            <Download className="w-4 h-4 text-amber-500" />
-            <span>הורדת כל התמונות</span>
+            <Share2 className="w-4 h-4" />
+            <span>שתף לחברים</span>
           </button>
-        )}
-      </div>
 
+          <button
+            id="btn-copy-app-link"
+            onClick={handleCopyLink}
+            className={`py-2 px-3 rounded-xl border border-border-color font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all shadow-3xs cursor-pointer active:scale-98 ${
+              copied
+                ? 'bg-green-600/15 text-green-700 dark:text-green-400 border-green-600/40'
+                : 'bg-bg-card hover:bg-border-color/20 text-text-primary'
+            }`}
+          >
+            {copied ? (
+              <>
+                <Check className="w-4 h-4 text-green-600" />
+                <span>הועתק!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 text-primary-accent" />
+                <span>העתק קישור</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

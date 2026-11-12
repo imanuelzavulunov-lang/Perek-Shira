@@ -4,25 +4,41 @@ import path from 'path';
 import fs from 'fs';
 import webpush from 'web-push';
 
+// Deterministic VAPID Keys fallback - ensures subscriptions never break across server restarts
+const DEFAULT_VAPID_KEYS = {
+  publicKey: 'BKZnTOuD-Yp8yO4SE56U9kqHYH1FVeXdJHBWghalzNFQIxjqEKyUgD2kZVbHSJ4E8PnROwJDMFcR2HjU-WW_kgc',
+  privateKey: 'PdcrMj_XJaWopVR4s7fA8Izn5xvL8SfHOaL8n3C3L0w',
+};
+
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  // In AI Studio, the dev server must always listen on port 3000 behind the internal proxy
+  const portArgIndex = process.argv.indexOf('--port');
+  const cliPort = portArgIndex !== -1 ? Number(process.argv[portArgIndex + 1]) : null;
+  const PORT = cliPort || 3000;
 
   app.use(express.json());
 
-  // VAPID configuration for Web Push
+  // VAPID configuration for Web Push with persistence
   const VAPID_FILE = path.join(process.cwd(), 'vapid-keys.json');
-  let vapidKeys: { publicKey: string; privateKey: string };
+  let vapidKeys = DEFAULT_VAPID_KEYS;
   if (fs.existsSync(VAPID_FILE)) {
     try {
-      vapidKeys = JSON.parse(fs.readFileSync(VAPID_FILE, 'utf-8'));
+      const parsed = JSON.parse(fs.readFileSync(VAPID_FILE, 'utf-8'));
+      if (parsed?.publicKey && parsed?.privateKey) {
+        vapidKeys = parsed;
+      } else {
+        fs.writeFileSync(VAPID_FILE, JSON.stringify(DEFAULT_VAPID_KEYS, null, 2));
+      }
     } catch {
-      vapidKeys = webpush.generateVAPIDKeys();
-      fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2));
+      fs.writeFileSync(VAPID_FILE, JSON.stringify(DEFAULT_VAPID_KEYS, null, 2));
     }
   } else {
-    vapidKeys = webpush.generateVAPIDKeys();
-    fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2));
+    try {
+      fs.writeFileSync(VAPID_FILE, JSON.stringify(DEFAULT_VAPID_KEYS, null, 2));
+    } catch {
+      // ignore
+    }
   }
 
   webpush.setVapidDetails(
@@ -31,13 +47,14 @@ async function startServer() {
     vapidKeys.privateKey
   );
 
-  // Subscriptions persistence
+  // Subscriptions persistence: local file in project directory
   const SUBS_FILE = path.join(process.cwd(), 'subscriptions.json');
 
   const getSubscriptions = (): any[] => {
     if (fs.existsSync(SUBS_FILE)) {
       try {
-        return JSON.parse(fs.readFileSync(SUBS_FILE, 'utf-8'));
+        const content = fs.readFileSync(SUBS_FILE, 'utf-8');
+        return JSON.parse(content);
       } catch {
         return [];
       }
@@ -69,8 +86,13 @@ async function startServer() {
     const existingIndex = subs.findIndex(
       (s) => s.subscription?.endpoint === subscription.endpoint
     );
+    const safeId = Buffer.from(subscription.endpoint)
+      .toString('base64')
+      .replace(/[^a-zA-Z0-9_-]/g, '')
+      .slice(-32);
+
     const updatedRecord = {
-      id: Buffer.from(subscription.endpoint).toString('base64').slice(-32),
+      id: safeId,
       subscription,
       reminders: Array.isArray(reminders) ? reminders : [],
       timezone: timezone || 'Asia/Jerusalem',
@@ -85,29 +107,51 @@ async function startServer() {
     }
 
     saveSubscriptions(subs);
-    res.json({ success: true });
+    res.json({ success: true, count: subs.length });
   });
 
-
-
-  // 3. Send test push notification directly to user's device
+  // 3. Send test push notification directly to user's device with HIGH URGENCY
   app.post('/api/send-test-push', async (req, res) => {
     try {
-      const { subscription } = req.body;
+      const { subscription, reminders, timezone } = req.body;
       if (!subscription || !subscription.endpoint) {
         return res.status(400).json({ error: 'Invalid subscription' });
       }
 
+      // Automatically register/update subscription when testing
+      if (Array.isArray(reminders)) {
+        const subs = getSubscriptions();
+        const existingIndex = subs.findIndex(
+          (s) => s.subscription?.endpoint === subscription.endpoint
+        );
+        const safeId = Buffer.from(subscription.endpoint)
+          .toString('base64')
+          .replace(/[^a-zA-Z0-9_-]/g, '')
+          .slice(-32);
+        const record = {
+          id: safeId,
+          subscription,
+          reminders,
+          timezone: timezone || 'Asia/Jerusalem',
+          lastTriggered: existingIndex >= 0 ? subs[existingIndex].lastTriggered || {} : {},
+          updatedAt: Date.now(),
+        };
+        if (existingIndex >= 0) subs[existingIndex] = record;
+        else subs.push(record);
+        saveSubscriptions(subs);
+      }
+
       const payload = JSON.stringify({
         title: 'בדיקת התראה - פרק שירה 📖',
-        body: 'התראות המכשיר פועלות בהצלחה גם כשהטלפון נעול ומכובה!',
-        tag: 'perek-shira-test-push',
+        body: 'התראות המכשיר פועלות בהצלחה! התזכורת תקפוץ בלוח ההתראות בזמן שבחרתם.',
+        tag: 'perek-shira-reminder',
         url: '/',
       });
 
       const pushOptions = {
         TTL: 86400,
         urgency: 'high' as const,
+        topic: 'perek-shira-reminder',
         headers: {
           'Urgency': 'high',
           'Topic': 'perek-shira-reminder',
@@ -122,15 +166,15 @@ async function startServer() {
     }
   });
 
-  // 4. Autonomous 24/7 Server Background Ticker for Scheduled Push Notifications
-  // Wakes up phones and displays alerts even when browser is completely closed and phone is locked/asleep!
-  setInterval(() => {
+  // Core background notification runner function
+  const checkAndDispatchReminders = async () => {
     try {
       const subs = getSubscriptions();
-      if (subs.length === 0) return;
+      if (subs.length === 0) return { checked: 0, sent: 0 };
 
       const now = new Date();
       let hasUpdates = false;
+      let sentCount = 0;
 
       for (const sub of subs) {
         if (!sub.reminders || !Array.isArray(sub.reminders) || sub.reminders.length === 0) continue;
@@ -183,17 +227,20 @@ async function startServer() {
           if (isNaN(rHour) || isNaN(rMinute)) continue;
           const reminderTotalMinutes = rHour * 60 + rMinute;
 
-          // Check if due: current minute matches or within 2-minute catchup window
+          // Check if due: current minute matches or within 5-minute catchup window
           const minuteDiff = currentTotalMinutes - reminderTotalMinutes;
-          const isDue = minuteDiff >= 0 && minuteDiff <= 2;
+          const isDue = minuteDiff >= 0 && minuteDiff <= 5;
 
           if (isDue) {
-            if (sub.lastTriggered[reminder.id] === localTodayStr) {
-              continue; // Already triggered today
+            // Deduplication key incorporates both date and scheduled time
+            const triggerKey = `${localTodayStr}-${reminder.time}`;
+            if (sub.lastTriggered[reminder.id] === triggerKey) {
+              continue; // Already triggered today at this scheduled time
             }
 
-            sub.lastTriggered[reminder.id] = localTodayStr;
+            sub.lastTriggered[reminder.id] = triggerKey;
             hasUpdates = true;
+            sentCount++;
 
             const payload = JSON.stringify({
               title: reminder.label?.trim() || 'קריאת פרק שירה 📖',
@@ -205,6 +252,7 @@ async function startServer() {
             const pushOptions = {
               TTL: 86400,
               urgency: 'high' as const, // High urgency: wakes up locked Android phone from Doze mode
+              topic: 'perek-shira-reminder',
               headers: {
                 'Urgency': 'high',
                 'Topic': 'perek-shira-reminder',
@@ -227,10 +275,28 @@ async function startServer() {
       if (hasUpdates) {
         saveSubscriptions(subs);
       }
+
+      return { checked: subs.length, sent: sentCount };
     } catch (err) {
       console.warn('Error in background reminder ticker:', err);
+      return { checked: 0, sent: 0 };
     }
-  }, 15000); // Check every 15 seconds
+  };
+
+  // 4. Autonomous 24/7 Server Background Ticker for Scheduled Push Notifications
+  // Wakes up phones and displays alerts even when browser is completely closed and phone is locked/asleep!
+  setInterval(() => {
+    checkAndDispatchReminders();
+  }, 20000); // Check every 20 seconds
+
+  // Manual cron trigger endpoint for monitoring / health / external ping
+  app.get('/api/cron-check-reminders', async (_req, res) => {
+    const result = await checkAndDispatchReminders();
+    res.json({ success: true, ...result, timestamp: new Date().toISOString() });
+  });
+
+  // Serve public assets (images, icons, manifest)
+  app.use(express.static(path.join(process.cwd(), 'public')));
 
   // In production serve dist, in dev mount Vite middlewares
   if (process.env.NODE_ENV === 'production') {
@@ -240,14 +306,26 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        watch: null,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`Port ${PORT} already in use. A process is already serving on this port.`);
+    } else {
+      console.error('Server listen error:', err);
+    }
   });
 }
 

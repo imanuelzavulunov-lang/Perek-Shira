@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile settings, reading stats and active reminders",
+      "type": "object",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "description": "User UI preferences such as font size and theme"
+        },
+        "reminders": {
+          "type": "array",
+          "description": "List of scheduled reminder configurations"
+        },
+        "lastReadDate": {
+          "type": "string",
+          "description": "ISO date of the last completed reading"
+        },
+        "readCount": {
+          "type": "number",
+          "description": "Total number of completed readings"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "description": "Last timestamp of user data synchronization"
+        }
+      }
+    },
+    "PublicDedication": {
+      "title": "PublicDedication",
+      "description": "Public prayer dedication or communal reading",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Creator user identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name for the prayer dedication"
+        },
+        "purpose": {
+          "type": "string",
+          "description": "Purpose of the dedication"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["userId", "name"]
+    },
+    "PushSubscription": {
+      "title": "PushSubscription",
+      "description": "Web push subscription and scheduled reminders for device delivery",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique subscription identifier"
+        },
+        "subscription": {
+          "type": "object",
+          "description": "Browser push subscription details including endpoint and keys"
+        },
+        "reminders": {
+          "type": "array",
+          "description": "Active reminders configured for this device"
+        },
+        "timezone": {
+          "type": "string",
+          "description": "Device timezone e.g. Asia/Jerusalem"
+        },
+        "lastTriggered": {
+          "type": "object",
+          "description": "Record of triggered reminders to prevent duplicates"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp of the last update"
+        }
+      },
+      "required": ["id", "subscription", "reminders", "timezone"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/data/profile": {
+      "schema": "UserProfile",
+      "description": "Personal profile, settings, and reminders for authenticated users"
+    },
+    "/public_dedications/{dedicationId}": {
+      "schema": "PublicDedication",
+      "description": "Public dedications created for communal readings"
+    },
+    "/push_subscriptions/{subscriptionId}": {
+      "schema": "PushSubscription",
+      "description": "Server-side web push subscription registry for background reminder dispatch"
+    }
+  }
+}

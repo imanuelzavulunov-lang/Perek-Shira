@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   Bell,
-  BellRing,
   ChevronUp,
   ChevronDown,
   Settings,
@@ -22,7 +21,7 @@ import IntroSection from './components/IntroSection';
 import YehiRatzonCard from './components/YehiRatzonCard';
 import BottomIntroSection from './components/BottomIntroSection';
 import SequentialPlayToast from './components/SequentialPlayToast';
-import { loadReminders, saveReminders, checkAndTriggerReminders } from './lib/notifications';
+import { loadReminders, saveReminders, checkAndTriggerReminders, subscribeUserToWebPush } from './lib/notifications';
 
 export default function App() {
   // --- Core States ---
@@ -31,7 +30,6 @@ export default function App() {
   const [isReminderOpen, setIsReminderOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
-  const [activeReminderAlert, setActiveReminderAlert] = useState<ReminderItem | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   // --- Sequential Audio Playback States & Refs ---
   const [toastState, setToastState] = useState<{ verseId: string; chapterId: number } | null>(null);
@@ -296,6 +294,9 @@ export default function App() {
 
   useEffect(() => {
     saveReminders(reminders);
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      subscribeUserToWebPush(reminders).catch(() => {});
+    }
     if (currentUser?.uid) {
       syncUserRemindersToFirestore(currentUser.uid, reminders);
     }
@@ -306,12 +307,8 @@ export default function App() {
     const activeReminders = reminders.filter((r) => r.enabled);
     if (activeReminders.length === 0) return;
 
-    const onReminderTriggered = (reminder: ReminderItem) => {
-      setActiveReminderAlert(reminder);
-    };
-
     // 1. Initial immediate check on mount / change
-    checkAndTriggerReminders(reminders, onReminderTriggered);
+    checkAndTriggerReminders(reminders);
 
     // 2. High-precision background Web Worker ticker (runs reliably without browser tab background throttling)
     let worker: Worker | null = null;
@@ -334,7 +331,7 @@ export default function App() {
       ], { type: 'application/javascript' });
       worker = new Worker(URL.createObjectURL(workerBlob));
       worker.onmessage = () => {
-        checkAndTriggerReminders(reminders, onReminderTriggered);
+        checkAndTriggerReminders(reminders);
       };
       worker.postMessage('start');
     } catch (e) {
@@ -343,12 +340,12 @@ export default function App() {
 
     // 3. Fallback standard main-thread interval check every 10 seconds
     const interval = setInterval(() => {
-      checkAndTriggerReminders(reminders, onReminderTriggered);
+      checkAndTriggerReminders(reminders);
     }, 10000);
 
     // 4. Re-check when window is refocused, tab becomes visible, or device resumes
     const handleVisibility = () => {
-      checkAndTriggerReminders(reminders, onReminderTriggered);
+      checkAndTriggerReminders(reminders);
     };
 
     window.addEventListener('focus', handleVisibility);
@@ -645,6 +642,7 @@ export default function App() {
                   onChange={handleSettingsChange}
                   onCloseSettings={() => setIsMenuOpen(false)}
                   onOpenDownloadImages={() => setIsDownloadModalOpen(true)}
+                  onShowNotification={showNotification}
                 />
               </div>
             </motion.div>
@@ -659,28 +657,16 @@ export default function App() {
         <header id="main-hero" className="relative overflow-hidden py-6 md:py-9 text-center select-none shrink-0 px-4">
           <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center">
             
-            {/* Main Logo (clean serif text matching the uploaded image logo style) */}
+
+            {/* Main Title */}
             <div className="pb-2">
               <h1 id="app-title-h1" className="text-[43px] md:text-[65px] font-frank font-extrabold text-text-primary select-none tracking-normal leading-none">
                 פרק שירה
               </h1>
             </div>
 
-            {/* Ornamental Divider matching the uploaded image */}
-            <div className="flex items-center justify-center gap-3 mt-[3px] mb-3 select-none" aria-hidden="true">
-              <div className="w-16 md:w-24 h-[1.5px] bg-border-color opacity-80 rounded-full" />
-              <svg 
-                className="w-3.5 h-3.5 text-border-color opacity-85" 
-                viewBox="0 0 24 24" 
-                fill="currentColor"
-              >
-                {/* 4-point star/diamond motif */}
-                <path d="M12 0 C12 6.627 17.373 12 24 12 C17.373 12 12 17.373 12 24 C12 17.373 6.627 12 0 12 C6.627 12 12 6.627 12 0 Z" />
-              </svg>
-              <div className="w-16 md:w-24 h-[1.5px] bg-border-color opacity-80 rounded-full" />
-            </div>
 
-            <p id="app-subtitle" dir="rtl" className="text-[15.2px] md:text-[17.1px] text-text-secondary max-w-xl mx-auto leading-relaxed font-medium">
+            <p id="app-subtitle" dir="rtl" className="pt-[10px] text-[15.2px] md:text-[17.1px] text-text-secondary max-w-xl mx-auto leading-relaxed font-medium">
 פרק שירה היא ברייתא קדמונית המכילה קטעי שירה אותם שרות כל הבריות בשבח הקב"ה. מסורת ישראל מייחסת את החיבור לדוד המלך ולשלמה בנו. מקובל כי אמירת פרק שירה בכל יום היא סגולה עצומה לשמירה, להצלה מכל צרה וצוקה, ולזכייה בחיי העולם הבא.            </p>
 
 
@@ -828,7 +814,6 @@ export default function App() {
         isOpen={isReminderOpen}
         onClose={() => setIsReminderOpen(false)}
         reminders={reminders}
-        onTriggerInAppAlert={setActiveReminderAlert}
         onSaveReminders={(newReminders, toastMessage) => {
           setReminders(newReminders);
           saveReminders(newReminders);
@@ -840,56 +825,6 @@ export default function App() {
           }
         }}
       />
-
-      {/* Real-time In-App Reminder Pop-up Alert (Works reliably on all devices & webviews) */}
-      <AnimatePresence>
-        {activeReminderAlert && (
-          <motion.div
-            initial={{ opacity: 0, y: -60, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -40, scale: 0.95 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="fixed top-4 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 z-[99999] bg-bg-card border-2 border-primary-accent rounded-2xl shadow-2xl p-4 font-sans text-right select-none"
-            dir="rtl"
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary-accent/15 text-primary-accent flex items-center justify-center shrink-0 mt-0.5">
-                <BellRing className="w-5 h-5 animate-pulse" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="text-[11px] font-bold text-primary-accent block uppercase tracking-wider">
-                  תזכורת פעילה 📖
-                </span>
-                <h4 className="text-sm font-bold text-text-primary truncate mt-0.5">
-                  {activeReminderAlert.label || 'קריאת פרק שירה'}
-                </h4>
-                <p className="text-xs text-text-secondary mt-0.5">
-                  הגיע הזמן לקריאת פרק שירה!
-                </p>
-                <div className="flex items-center gap-2 mt-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveReminderAlert(null);
-                      animateScrollTo('chapter-1');
-                    }}
-                    className="bg-primary-accent hover:bg-primary-accent-hover text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-xs transition-colors cursor-pointer"
-                  >
-                    קרא עכשיו
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveReminderAlert(null)}
-                    className="border border-border-color text-text-secondary hover:text-text-primary hover:bg-bg-muted text-xs font-bold px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
-                  >
-                    סגור
-                  </button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Download All Images Modal */}
       <DownloadImagesModal

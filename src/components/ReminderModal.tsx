@@ -9,10 +9,6 @@ import {
   Pencil,
   Trash2,
   ArrowRight,
-  BellRing,
-  Settings2,
-  ShieldCheck,
-  Send,
   Plus,
   CheckSquare,
   Square,
@@ -22,11 +18,9 @@ import { ReminderItem } from '../types';
 import {
   getNotificationPermission,
   requestDeviceNotificationPermission,
-  sendDeviceNotification,
   clearReminderFiredToday,
   normalizeTimeStr,
   subscribeUserToWebPush,
-  sendTestWebPushNotification,
 } from '../lib/notifications';
 
 interface ReminderModalProps {
@@ -34,7 +28,6 @@ interface ReminderModalProps {
   onClose: () => void;
   reminders: ReminderItem[];
   onSaveReminders: (reminders: ReminderItem[], toastMessage?: string) => void;
-  onTriggerInAppAlert?: (reminder: ReminderItem) => void;
 }
 
 const DAYS_OF_WEEK = [
@@ -52,7 +45,6 @@ export default function ReminderModal({
   onClose,
   reminders,
   onSaveReminders,
-  onTriggerInAppAlert,
 }: ReminderModalProps) {
   // Navigation inside modal: 'list' | 'add' | 'edit'
   const [viewMode, setViewMode] = useState<'list' | 'add' | 'edit'>('list');
@@ -128,52 +120,7 @@ export default function ReminderModal({
     }
   };
 
-  const handleTestNotification = async () => {
-    if (permission !== 'granted') {
-      // In-app test trigger
-      if (onTriggerInAppAlert) {
-        onTriggerInAppAlert({
-          id: 'test',
-          label: 'בדיקת תזכורת פרק שירה 📖',
-          time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
-          days: [0, 1, 2, 3, 4, 5, 6],
-          enabled: true,
-          createdAt: Date.now(),
-        });
-      }
-      handleRequestPermission();
-      return;
-    }
 
-    // 1. Ensure push subscription is active on server
-    await subscribeUserToWebPush(reminders).catch(() => {});
-
-    // 2. Dispatch real server push (wakes locked/sleeping phone screen)
-    sendTestWebPushNotification(reminders).catch(() => {});
-
-    // 3. Also trigger device system notification
-    const success = await sendDeviceNotification(
-      'בדיקת התראה - פרק שירה 📖',
-      'התראות המכשיר פועלות בהצלחה! התזכורת תקפוץ בלוח ההתראות בזמן שבחרתם.'
-    );
-
-    if (onTriggerInAppAlert) {
-      onTriggerInAppAlert({
-        id: 'test',
-        label: 'בדיקת תזכורת פרק שירה 📖',
-        time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
-        days: [0, 1, 2, 3, 4, 5, 6],
-        enabled: true,
-        createdAt: Date.now(),
-      });
-    }
-
-    if (success) {
-      showToast('התראת בדיקה נשלחה ללוח ההתראות במכשירך!');
-    } else {
-      showToast('התראה הוצגה באפליקציה. ודאו שההתראות מופעלות בהגדרות המכשיר כדי שיקפצו בלוח ההתראות.', 'error');
-    }
-  };
 
   // Toggle Reminder Active/Inactive
   const handleToggleEnable = (id: string) => {
@@ -221,6 +168,7 @@ export default function ReminderModal({
     setSwipedReminderId(null);
     const updated = reminders.filter((r) => r.id !== id);
     onSaveReminders(updated, 'התזכורת נמחקה בהצלחה');
+    subscribeUserToWebPush(updated).catch(() => {});
     showToast('התזכורת נמחקה בהצלחה');
   };
 
@@ -300,7 +248,6 @@ export default function ReminderModal({
     }
   };
 
-  const isPermissionGranted = permission === 'granted';
 
   return (
     <>
@@ -361,59 +308,7 @@ export default function ReminderModal({
 
               {/* Modal Body */}
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-                {/* Device Notification Access Status Banner */}
-                <div className="bg-bg-muted border border-border-color rounded-xl p-3 shadow-3xs font-sans">
-                  {isPermissionGranted ? (
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <ShieldCheck className="w-4.5 h-4.5 text-green-600 dark:text-green-400 shrink-0" />
-                        <div className="text-right min-w-0">
-                          <span className="text-xs font-bold text-text-primary block truncate">
-                            התראות מערכת פעילות במכשיר ✓
-                          </span>
-                          <span className="text-[11px] text-text-secondary block">
-                            התזכורות יקפצו ישירות בלוח ההתראות
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleTestNotification}
-                        className="text-xs font-bold text-primary-accent hover:text-primary-accent-hover px-2.5 py-1.5 rounded-lg bg-bg-card hover:bg-bg-muted border border-border-color transition-colors cursor-pointer shrink-0 flex items-center gap-1 shadow-3xs"
-                        title="שלח התראת בדיקה למכשיר כעת"
-                      >
-                        <Send className="w-3 h-3" />
-                        <span>בדוק התראה</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs sm:text-sm">
-                        <BellRing className="w-4 h-4 shrink-0" />
-                        <span>נדרשת הרשאת התראות במכשיר</span>
-                      </div>
-                      <p className="text-xs text-text-secondary leading-relaxed">
-                        כדי לקבל התראה שקופצת ישירות בלוח ההתראות של הטלפון או המחשב, יש לאשר קבלת התראות:
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleRequestPermission}
-                        className="w-full flex items-center justify-center gap-2 bg-primary-accent text-white hover:bg-primary-accent-hover rounded-xl px-4 py-2 font-bold text-xs sm:text-sm transition-all cursor-pointer shadow-xs"
-                      >
-                        <BellRing className="w-4 h-4 shrink-0" />
-                        <span>מתן גישה להתראות במכשיר</span>
-                      </button>
-                      {permission === 'denied' && (
-                        <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-start gap-2">
-                          <Settings2 className="w-4 h-4 shrink-0 mt-0.5" />
-                          <span>
-                            ההתראות חסומות בדפדפן. לחצו על סמל המנעול ליד כתובת האתר &gt; הרשאות &gt; אפשר התראות. (בנוסף, תזכורות יקפצו בתוך האפליקציה כשהיא פתוחה).
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+
 
                 {/* VIEW MODE: LIST */}
                 {viewMode === 'list' && (

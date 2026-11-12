@@ -1,5 +1,7 @@
 import { ReminderItem } from '../types';
 import { safeStorage } from './storage';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
 
 const REMINDERS_STORAGE_KEY = 'perek-shira-reminders';
 const OLD_REMINDER_STORAGE_KEY = 'perek-shira-reminder';
@@ -264,6 +266,30 @@ function urlB64ToUint8Array(base64String: string) {
 }
 
 /**
+ * Helper to reliably obtain an active ServiceWorkerRegistration without hanging indefinitely
+ */
+export const getActiveServiceWorkerRegistration = async (): Promise<ServiceWorkerRegistration | null> => {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
+
+  try {
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1800));
+    const reg = await Promise.race([navigator.serviceWorker.ready, timeoutPromise]);
+    if (reg) return reg;
+  } catch {
+    // continue to fallback
+  }
+
+  try {
+    const existing = await navigator.serviceWorker.getRegistration();
+    if (existing) return existing;
+    return await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  } catch (err) {
+    console.warn('Failed to get active Service Worker registration:', err);
+    return null;
+  }
+};
+
+/**
  * Subscribes user to Server-Side Web Push so notifications can pop up
  * even when the website is closed or phone screen is off/locked!
  */
@@ -277,7 +303,7 @@ export const subscribeUserToWebPush = async (reminders: ReminderItem[]): Promise
       return false;
     }
 
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await getActiveServiceWorkerRegistration();
     if (!reg) return false;
 
     // 1. Fetch VAPID public key from backend
@@ -322,8 +348,9 @@ export const subscribeUserToWebPush = async (reminders: ReminderItem[]): Promise
 
     if (!subscription) return false;
 
-    // 3. Send subscription + reminders + timezone to server
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem';
+
+    // 3. Send subscription + reminders + timezone to server
     await fetch('/api/save-subscription', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -332,7 +359,24 @@ export const subscribeUserToWebPush = async (reminders: ReminderItem[]): Promise
         reminders,
         timezone: tz,
       }),
-    });
+    }).catch(() => {});
+
+    // 4. Save directly to Firestore for maximum persistence across all restarts
+    if (db && subscription.endpoint) {
+      try {
+        const safeId = btoa(subscription.endpoint).replace(/[^a-zA-Z0-9_-]/g, '').slice(-32);
+        const subDocRef = doc(db, 'push_subscriptions', safeId);
+        setDoc(subDocRef, {
+          id: safeId,
+          subscription: JSON.parse(JSON.stringify(subscription)),
+          reminders,
+          timezone: tz,
+          updatedAt: Date.now(),
+        }, { merge: true }).catch(() => {});
+      } catch (fsErr) {
+        // ignore
+      }
+    }
 
     return true;
   } catch (err) {
@@ -350,7 +394,7 @@ export const sendTestWebPushNotification = async (reminders: ReminderItem[]): Pr
     if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       return false;
     }
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await getActiveServiceWorkerRegistration();
     if (!reg) return false;
 
     let subscription = await reg.pushManager.getSubscription();
@@ -360,10 +404,11 @@ export const sendTestWebPushNotification = async (reminders: ReminderItem[]): Pr
     }
     if (!subscription) return false;
 
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem';
     const res = await fetch('/api/send-test-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subscription }),
+      body: JSON.stringify({ subscription, reminders, timezone: tz }),
     });
     return res.ok;
   } catch (err) {
@@ -372,7 +417,6 @@ export const sendTestWebPushNotification = async (reminders: ReminderItem[]): Pr
   }
 };
 
-
 /**
  * Synchronizes reminders to the Service Worker and registers OS-level triggers
  * so alarms fire even if the browser is closed or phone is locked/off.
@@ -380,11 +424,14 @@ export const sendTestWebPushNotification = async (reminders: ReminderItem[]): Pr
 export const syncRemindersToServiceWorker = async (reminders: ReminderItem[]): Promise<void> => {
   try {
     // 1. Save to shared IndexedDB so SW can read anytime
-    await saveRemindersToIDB(reminders);
+    saveRemindersToIDB(reminders).catch(() => {});
 
-    // 2. Post to Service Worker to schedule triggers & alarms
+    // 2. Synchronize with Server-side Web Push for closed-browser / locked-phone alerts
+    subscribeUserToWebPush(reminders).catch(() => {});
+
+    // 3. Post to Service Worker to schedule triggers & alarms
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await getActiveServiceWorkerRegistration();
       if (reg) {
         if (reg.active && typeof reg.active.postMessage === 'function') {
           reg.active.postMessage({
@@ -393,7 +440,7 @@ export const syncRemindersToServiceWorker = async (reminders: ReminderItem[]): P
           });
         }
 
-        // 3. Register Periodic Background Sync if available
+        // Register Periodic Background Sync if available
         if ('periodicSync' in reg && typeof (reg as any).periodicSync?.register === 'function') {
           try {
             await (reg as any).periodicSync.register('perek-shira-reminder-check', {
@@ -405,9 +452,6 @@ export const syncRemindersToServiceWorker = async (reminders: ReminderItem[]): P
         }
       }
     }
-
-    // 4. Synchronize with Server-side Web Push for closed-browser / locked-phone alerts
-    subscribeUserToWebPush(reminders).catch(() => {});
   } catch (err) {
     console.warn('Error syncing reminders to Service Worker:', err);
   }
